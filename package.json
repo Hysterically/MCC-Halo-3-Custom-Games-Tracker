@@ -5,7 +5,8 @@
   "description": "Tracks Halo 3 (MCC) custom games from local mpcarnagereport*.xml and posts an ELO leaderboard to Discord.",
   "type": "module",
   "scripts": {
-    "inspect": "tsx src/inspect.ts"
+    "inspect": "tsx src/inspect.ts",
+    "parse": "tsx src/parse.ts"
   },
   "dependencies": {
     "chokidar": "^4.0.3",
