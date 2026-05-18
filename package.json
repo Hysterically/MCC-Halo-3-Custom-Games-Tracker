@@ -1,0 +1,19 @@
+{
+  "name": "h3-customs-tracker",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Tracks Halo 3 (MCC) custom games from local mpcarnagereport*.xml and posts an ELO leaderboard to Discord.",
+  "type": "module",
+  "scripts": {
+    "inspect": "tsx src/inspect.ts"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "fast-xml-parser": "^4.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
