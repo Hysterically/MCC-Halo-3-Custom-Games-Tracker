@@ -26,29 +26,39 @@ machine is enough — the XML lists *all* players).
 
 ## Status
 
-Building the **parser** against a real carnage report. Everything else (watch
-→ dedupe → ELO → Discord) follows once the schema is locked.
+Pipeline complete: **parse → dedupe → SQLite → ELO → Discord**. Schema is
+locked against a real Halo 3 report; the watcher, store, rating engine, and
+Discord delivery are built and smoke-tested end to end.
 
-## What I need from you (one file, no auth)
+- **ELO:** classic, team-average, zero-sum. Ratings are recomputed from the
+  full match history every time (deterministic, retunable, no drift).
+- **Storage:** SQLite (`./data/h3.db`). Players keyed by XUID so Gamertag
+  changes don't split history.
+- **Discord:** webhook auto-posts the board after each new match; an optional
+  bot answers `/leaderboard` and `/stats`.
 
-A single real `mpcarnagereport*.xml` from the **gaming PC**, where MCC writes
-them (typically `%USERPROFILE%\AppData\LocalLow\MCC\Temporary\`, or the
-Microsoft Store package path). Get it here either way:
-
-- **Easiest:** copy one such file into OneDrive so it syncs to the dev PC, then
-  drop it in `samples/`; **or**
-- paste the file's contents into chat.
-
-Then:
+## Run it (on the gaming PC)
 
 ```powershell
-cd C:\Users\Johann\h3-customs-tracker
 npm install
-npm run inspect            # newest xml in ./samples
-# or, run ON the gaming PC against the live folder:
-npm run inspect -- "C:\Users\<you>\AppData\LocalLow\MCC\Temporary"
+copy .env.example .env     # optional — fill in Discord bits if you want them
+npm run watch              # ingests existing reports, then watches live
 ```
 
-`npm run inspect` prints the XML's structure. Paste that back and the exact
-parser gets written (players, teams, scores, winner, map, mode, timestamp) —
-then the watcher, ELO, and Discord bot.
+Zero config works: with no `.env` it watches
+`%USERPROFILE%\AppData\LocalLow\MCC\Temporary` and just keeps the local DB
+(Discord disabled until you add a webhook URL / bot token).
+
+### Scripts
+
+| command | what it does |
+|---|---|
+| `npm run watch` | live watcher: parse → dedupe → store → ELO → Discord |
+| `npm run backfill -- "<folder>"` | one-shot ingest a folder of old reports |
+| `npm run board` | print current standings from the DB (no Discord) |
+| `npm run inspect` | dump an XML's structure (schema discovery) |
+| `npm run parse` | classify reports (which are tracked H3 customs) |
+| `npm run typecheck` | `tsc --noEmit` |
+
+See `.env.example` for all options (MCC folder, DB path, ELO K/start,
+Discord webhook URL, bot token, guild ID).

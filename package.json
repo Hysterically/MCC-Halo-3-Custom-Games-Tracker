@@ -6,13 +6,21 @@
   "type": "module",
   "scripts": {
     "inspect": "tsx src/inspect.ts",
-    "parse": "tsx src/parse.ts"
+    "parse": "tsx src/parse.ts",
+    "watch": "tsx src/watch.ts",
+    "backfill": "tsx src/backfill.ts",
+    "board": "tsx src/board.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "better-sqlite3": "^12.10.0",
     "chokidar": "^4.0.3",
+    "discord.js": "^14.26.4",
+    "dotenv": "^17.4.2",
     "fast-xml-parser": "^4.5.1"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
