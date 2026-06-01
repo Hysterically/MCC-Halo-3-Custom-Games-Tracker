@@ -14,7 +14,12 @@ Gaming PC (host):
   MCC writes mpcarnagereport*.xml  ->  watcher parses it
                                         |
                                         v
-                            dedupe -> ELO -> Discord leaderboard
+                            dedupe -> per-category ELO
+                                        |
+                          +-------------+-------------+
+                          v                           v
+                #game-results post        #leaderboard (edited in place,
+                (per-match summary)        2v2 / 4v4 / FFA sections)
 ```
 
 **No Microsoft auth. No Spartan token. No web API. No third party.** Just read
@@ -30,12 +35,21 @@ Pipeline complete: **parse → dedupe → SQLite → ELO → Discord**. Schema i
 locked against a real Halo 3 report; the watcher, store, rating engine, and
 Discord delivery are built and smoke-tested end to end.
 
-- **ELO:** classic, team-average, zero-sum. Ratings are recomputed from the
-  full match history every time (deterministic, retunable, no drift).
+- **ELO:** classic, team-average, zero-sum, recomputed from the full match
+  history every time (deterministic, retunable, no drift). Ratings are
+  **per category** — a player's 2v2, 4v4, and FFA ELO are independent, each
+  computed only from that category's matches.
 - **Storage:** SQLite (`./data/h3.db`). Players keyed by XUID so Gamertag
   changes don't split history.
-- **Discord:** webhook auto-posts the board after each new match; an optional
-  bot answers `/leaderboard` and `/stats`.
+- **Discord** splits into two channels:
+  - **#game-results** — a per-match summary (gametype, teams or FFA, K/D/A,
+    winner) posted after every new match.
+  - **#leaderboard** — a single always-current message, edited in place,
+    with separate **2v2 / 4v4 / FFA** standings sections.
+  - An optional bot answers `/leaderboard` and `/stats` on demand.
+- **Display aliases:** `aliases.json` maps a Gamertag to a preferred display
+  name (e.g. `HystericaIly` → `Hysterically`) without rewriting any history —
+  matches stay keyed by XUID, only the rendered label changes.
 
 ## Run it — for end users (no Node install required)
 
@@ -76,6 +90,16 @@ npm run watch              # live watcher
 
 See `.env.example` for all options (MCC folder, DB path, ELO K/start,
 Discord webhook URLs, bot token, guild ID).
+
+To customize how a name shows on the board, create `aliases.json` (or point
+`ALIASES_PATH` elsewhere) mapping in-game Gamertag → display name:
+
+```json
+{ "HystericaIly": "Hysterically" }
+```
+
+Matching is case-insensitive; unknown names render as-is. The file is read
+once per run, so edits take effect on the next start.
 
 ## Important: one tracker PC per group
 
