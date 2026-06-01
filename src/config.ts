@@ -6,6 +6,7 @@
 
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { pathToFileURL } from "node:url";
 import { config as loadEnv } from "dotenv";
 
 loadEnv();
@@ -18,8 +19,18 @@ const env = (k: string): string | undefined => {
 export interface Config {
   /** Folder MCC writes mpcarnagereport*.xml to (or a folder of samples). */
   carnageDir: string;
-  /** SQLite database file. Created on first run. */
+  /** SQLite database file. Created on first run (used when DB_URL is unset). */
   dbPath: string;
+  /**
+   * libSQL connection URL. Defaults to a `file:` URL pointing at dbPath, so
+   * solo users need no config. Point two or more PCs at the SAME remote
+   * libSQL/Turso URL (libsql://…) to share one canonical history — the DB then
+   * acts as the cross-instance guard: a match is recorded (and posted) by
+   * exactly one instance, via an atomic insert on its GameUniqueId.
+   */
+  dbUrl: string;
+  /** Auth token for a remote libSQL/Turso DB (ignored for local file URLs). */
+  dbAuthToken?: string;
   /** JSON map of Gamertag -> preferred display name on the leaderboard. */
   aliasesPath: string;
   /** Starting rating every new player is seeded at. */
@@ -39,9 +50,13 @@ export interface Config {
 // Back-compat: an older single DISCORD_WEBHOOK_URL falls through to results.
 const legacyWebhook = env("DISCORD_WEBHOOK_URL");
 
+const dbPath = env("DB_PATH") ?? join(process.cwd(), "data", "h3.db");
+
 export const config: Config = {
   carnageDir: env("MCC_CARNAGE_DIR") ?? join(homedir(), "AppData", "LocalLow", "MCC", "Temporary"),
-  dbPath: env("DB_PATH") ?? join(process.cwd(), "data", "h3.db"),
+  dbPath,
+  dbUrl: env("DB_URL") ?? pathToFileURL(dbPath).href,
+  dbAuthToken: env("DB_AUTH_TOKEN"),
   aliasesPath: env("ALIASES_PATH") ?? join(process.cwd(), "aliases.json"),
   eloStart: Number(env("ELO_START") ?? 1200),
   eloK: Number(env("ELO_K") ?? 32),

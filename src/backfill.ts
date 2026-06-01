@@ -15,7 +15,7 @@ import { parseCarnageFile } from "./parseCarnage.ts";
 import { formatLeaderboard } from "./discord.ts";
 
 const dir = process.argv[2] ?? config.carnageDir;
-const db = openDb(config.dbPath);
+const db = await openDb(config.dbUrl, config.dbAuthToken);
 
 const files = (await readdir(dir)).filter(
   (f) => /carnage/i.test(f) && extname(f).toLowerCase() === ".xml",
@@ -25,12 +25,12 @@ let added = 0;
 for (const f of files) {
   try {
     const r = await parseCarnageFile(join(dir, f));
-    if (r.tracked && recordMatch(db, r)) added++;
+    if (r.tracked && (await recordMatch(db, r))) added++;
   } catch (e) {
     console.warn(`skip ${f}: ${(e as Error).message}`);
   }
 }
 
-console.log(`Scanned ${files.length} reports in ${dir}: +${added} new, ${matchCount(db)} total.\n`);
-console.log(formatLeaderboard(matchesChrono(db), { start: config.eloStart, k: config.eloK }));
+console.log(`Scanned ${files.length} reports in ${dir}: +${added} new, ${await matchCount(db)} total.\n`);
+console.log(formatLeaderboard(await matchesChrono(db), { start: config.eloStart, k: config.eloK }));
 db.close();

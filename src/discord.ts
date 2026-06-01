@@ -22,7 +22,7 @@ import {
   type ChatInputCommandInteraction,
 } from "discord.js";
 import type { DB, StoredMatch } from "./db.ts";
-import { matchCount, matchesChrono, kvGet, kvSet } from "./db.ts";
+import { matchCount, matchesChrono, kvGet, kvClaim, kvCas } from "./db.ts";
 import { computeRatings, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import { categorize, CATEGORY_LABEL, BOARD_CATEGORIES, type Category } from "./category.ts";
@@ -186,6 +186,23 @@ async function deleteMessage(url: string, messageId: string): Promise<void> {
   }
 }
 
+/**
+ * PATCH an existing webhook message in place. Returns false if it's gone (404)
+ * so the caller can recreate it; throws on other errors.
+ */
+async function editMessage(url: string, messageId: string, content: string): Promise<boolean> {
+  const res = await fetch(`${url}/messages/${messageId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+  });
+  if (res.status === 404) return false;
+  if (!res.ok) {
+    throw new Error(`Discord webhook edit ${res.status}: ${await res.text().catch(() => "")}`);
+  }
+  return true;
+}
+
 /** Stable per-webhook key so changing the URL implicitly resets stored state. */
 function webhookId(url: string): string {
   const m = url.match(/\/webhooks\/(\d+)\//);
@@ -204,9 +221,15 @@ export async function postMatchResult(
 }
 
 /**
- * Refresh the leaderboard: post a fresh message so the latest standings land
- * at the bottom of the channel, then delete the previous leaderboard message
- * so only the newest one remains.
+ * Refresh the live leaderboard by editing a single persistent message in place.
+ *
+ * The message id is held in the shared DB (kv `lb_msg:<webhook>`), so every
+ * instance edits the SAME message instead of each posting its own — that's what
+ * keeps two watchers from producing duplicate / diverging boards. Editing in
+ * place (rather than post-new + delete-old) is also what makes concurrent
+ * refreshes safe: both compute identical content from the one canonical DB, so
+ * a last-writer-wins PATCH is harmless. Only the first-ever creation races, and
+ * that's resolved with an atomic kv claim (the loser deletes its extra message).
  */
 export async function upsertLeaderboard(
   url: string | undefined,
@@ -214,14 +237,30 @@ export async function upsertLeaderboard(
   elo: EloOptions,
 ): Promise<void> {
   if (!url) return;
-  const content = formatLeaderboard(matchesChrono(db), elo);
+  const content = formatLeaderboard(await matchesChrono(db), elo);
   const key = `lb_msg:${webhookId(url)}`;
-  const previous = kvGet(db, key);
+  const existing = await kvGet(db, key);
 
-  const id = await postAndReturnId(url, content);
-  kvSet(db, key, id);
+  // Happy path: edit the message we already track.
+  if (existing) {
+    if (await editMessage(url, existing, content)) return;
+    // Tracked message is gone (e.g. deleted by hand). Recreate and CAS the id.
+    const replacement = await postAndReturnId(url, content);
+    if (await kvCas(db, key, existing, replacement)) return;
+    // Another instance already replaced it — drop ours, edit the survivor.
+    await deleteMessage(url, replacement);
+    const winner = await kvGet(db, key);
+    if (winner) await editMessage(url, winner, content);
+    return;
+  }
 
-  if (previous) await deleteMessage(url, previous);
+  // No message yet: create one and atomically claim the slot.
+  const created = await postAndReturnId(url, content);
+  if (await kvClaim(db, key, created)) return;
+  // Lost the create race — delete our duplicate, edit the one that won.
+  await deleteMessage(url, created);
+  const winner = await kvGet(db, key);
+  if (winner) await editMessage(url, winner, content);
 }
 
 // --- slash-command bot (unchanged) -----------------------------------------
@@ -258,9 +297,9 @@ export async function startBot(
     const ix = i as ChatInputCommandInteraction;
     try {
       if (ix.commandName === "leaderboard") {
-        await ix.reply(formatLeaderboard(matchesChrono(db), elo));
+        await ix.reply(formatLeaderboard(await matchesChrono(db), elo));
       } else if (ix.commandName === "stats") {
-        await ix.reply(`📊 ${matchCount(db)} tracked Halo 3 custom matches recorded.`);
+        await ix.reply(`📊 ${await matchCount(db)} tracked Halo 3 custom matches recorded.`);
       }
     } catch (e) {
       console.error("[discord] command error:", e);

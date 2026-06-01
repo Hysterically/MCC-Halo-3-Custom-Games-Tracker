@@ -39,8 +39,10 @@ Discord delivery are built and smoke-tested end to end.
   history every time (deterministic, retunable, no drift). Ratings are
   **per category** — a player's 2v2, 4v4, and FFA ELO are independent, each
   computed only from that category's matches.
-- **Storage:** SQLite (`./data/h3.db`). Players keyed by XUID so Gamertag
-  changes don't split history.
+- **Storage:** libSQL / SQLite. Defaults to a local file (`./data/h3.db`);
+  point `DB_URL` at a shared remote libSQL/Turso DB to run several PCs at once
+  (see [Running on more than one PC](#running-on-more-than-one-pc)). Players
+  keyed by XUID so Gamertag changes don't split history.
 - **Discord** splits into two channels:
   - **#game-results** — a per-match summary (gametype, teams or FFA, K/D/A,
     winner) posted after every new match.
@@ -88,13 +90,39 @@ npm run watch              # live watcher
 | `npm run parse` | classify reports (which are tracked H3 customs) |
 | `npm run typecheck` | `tsc --noEmit` |
 
-See `.env.example` for all options (MCC folder, DB path, ELO K/start,
+See `.env.example` for all options (MCC folder, DB path/URL, ELO K/start,
 Discord webhook URLs, bot token, guild ID).
 
-## Important: one tracker PC per group
+## Running on more than one PC
 
-Each install has its own local SQLite DB. The architecture assumes a
-single "tracker PC" (whoever hosts most often). If two people run the
-tracker during the same game you get duplicate Discord posts and
-divergent leaderboards. Pick one host. Multi-PC sync would need a
-shared DB — out of scope for the current design.
+By default each install has its own local SQLite DB, so the design assumes a
+single "tracker PC" — if two people ran it with separate local DBs during the
+same game, each would post the same match independently and maintain its own
+diverging leaderboard.
+
+To run the tracker on two or more PCs at once (e.g. for failover, or because
+different people host on different nights), point every PC at **one shared
+remote DB** via `DB_URL` (+ `DB_AUTH_TOKEN`). The shared DB then acts as a
+**cross-instance guard**:
+
+- **No duplicate posts.** A match is recorded inside a write transaction with
+  `INSERT … ON CONFLICT(match_id) DO NOTHING`. Whichever instance's insert
+  actually creates the row owns that match and posts it to Discord; every other
+  instance that later sees the same `GameUniqueId` gets "already recorded" and
+  stays silent. The claim is atomic, so it holds even if two PCs finish the
+  same match at the same instant.
+- **One shared leaderboard.** The leaderboard message id lives in the shared DB
+  and is edited in place, so all instances update the same message instead of
+  each posting their own. ELO is computed from the single canonical history, so
+  the board is correct no matter which PC posts it.
+
+Setup: create a free DB at [turso.tech](https://turso.tech), then set
+`DB_URL=libsql://…` and `DB_AUTH_TOKEN=…` in each PC's `.env`. A solo user
+needs none of this — leaving `DB_URL` unset uses the local file as before.
+
+### Migrating an existing local DB
+
+The store switched from `better-sqlite3` to libSQL (same on-disk SQLite
+format, so existing `data/h3.db` files are read as-is). When upgrading a
+running install, **stop the old watcher before starting the new one** so its
+write-ahead log is flushed into `h3.db` on a clean shutdown.

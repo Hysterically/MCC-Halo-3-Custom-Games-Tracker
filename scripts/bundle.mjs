@@ -31,9 +31,23 @@ const NODE_URL = `https://nodejs.org/dist/${NODE_VERSION}/${NODE_ZIP_NAME}`;
 const NODE_CACHE = join(tmpdir(), `h3-tracker-${NODE_ZIP_NAME}`);
 
 const ENTRIES = ["setup", "watch", "backfill", "board", "announce"];
-// better-sqlite3 is a native module; stays external and ships as a real
-// node_modules entry that node.exe resolves at runtime.
-const EXTERNALS = ["better-sqlite3", "bindings", "file-uri-to-path"];
+// libSQL's pure-JS layers (@libsql/client, core, hrana, ws, js-base64…) bundle
+// fine; only the native `libsql` addon and its loader can't. Keep those
+// external so they ship as real node_modules entries node.exe resolves at
+// runtime. bufferutil/utf-8-validate are ws's optional native speedups — not
+// installed, so leave them external (ws try/catches the missing require).
+const EXTERNALS = [
+  "libsql",
+  "@neon-rs/load",
+  "detect-libc",
+  "@libsql/win32-x64-msvc",
+  "bufferutil",
+  "utf-8-validate",
+];
+// Package dirs (under node_modules) copied wholesale so the native loader can
+// resolve the .node at runtime. libsql carries its own nested detect-libc, so
+// it doesn't need a top-level copy.
+const NATIVE_PKGS = ["libsql", "@neon-rs/load", "@libsql/win32-x64-msvc"];
 
 async function exists(path) {
   try {
@@ -88,26 +102,19 @@ async function bundleEntries() {
 }
 
 async function copyNativeDeps() {
-  // Copy just enough of each external package to satisfy `require()`.
-  // For better-sqlite3 that's lib/ + the compiled .node + package.json;
-  // for bindings/file-uri-to-path it's the whole (tiny) package.
+  // Copy each native package wholesale (they're small apart from the 8 MB
+  // platform .node) so libsql's runtime `require("@libsql/<target>")` resolves
+  // from the bundle. Pure-JS deps are already inlined by esbuild.
   const out = join(DIST, "node_modules");
   await mkdir(out, { recursive: true });
 
-  // better-sqlite3: skip build/ junk except the .node binary
-  const bsRoot = join(ROOT, "node_modules", "better-sqlite3");
-  const bsOut = join(out, "better-sqlite3");
-  await cp(join(bsRoot, "lib"), join(bsOut, "lib"), { recursive: true });
-  await cp(join(bsRoot, "package.json"), join(bsOut, "package.json"));
-  await mkdir(join(bsOut, "build", "Release"), { recursive: true });
-  await cp(
-    join(bsRoot, "build", "Release", "better_sqlite3.node"),
-    join(bsOut, "build", "Release", "better_sqlite3.node"),
-  );
-
-  // The two pure-JS resolution helpers.
-  for (const pkg of ["bindings", "file-uri-to-path"]) {
-    await cp(join(ROOT, "node_modules", pkg), join(out, pkg), { recursive: true });
+  for (const pkg of NATIVE_PKGS) {
+    const src = join(ROOT, "node_modules", pkg);
+    if (!(await exists(src))) {
+      console.warn(`[native] missing ${pkg} — skipping (bundle may not run locally)`);
+      continue;
+    }
+    await cp(src, join(out, pkg), { recursive: true });
   }
 }
 

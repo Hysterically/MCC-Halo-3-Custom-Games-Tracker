@@ -15,7 +15,7 @@ if (!config.discordLeaderboardWebhookUrl) {
   process.exit(1);
 }
 
-const db = openDb(config.dbPath);
+const db = await openDb(config.dbUrl, config.dbAuthToken);
 await upsertLeaderboard(config.discordLeaderboardWebhookUrl, db, {
   start: config.eloStart,
   k: config.eloK,

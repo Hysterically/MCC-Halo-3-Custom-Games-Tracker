@@ -27,8 +27,8 @@ const elo = { start: config.eloStart, k: config.eloK };
 const isCarnage = (f: string): boolean =>
   /carnage/i.test(f) && extname(f).toLowerCase() === ".xml";
 
-const db = openDb(config.dbPath);
-console.log(`[db] ${config.dbPath} — ${matchCount(db)} matches before this run`);
+const db = await openDb(config.dbUrl, config.dbAuthToken);
+console.log(`[db] ${config.dbUrl} — ${await matchCount(db)} matches before this run`);
 
 /** Parse one file and record it if it's a tracked match. Returns it on success. */
 async function ingest(path: string): Promise<CarnageReport | null> {
@@ -40,7 +40,14 @@ async function ingest(path: string): Promise<CarnageReport | null> {
     return null;
   }
   if (!report.tracked) return null;
-  if (!recordMatch(db, report)) return null; // dupe — already have it
+  try {
+    if (!(await recordMatch(db, report))) return null; // dupe — already recorded (here or another instance)
+  } catch (e) {
+    // A transient DB error (e.g. the shared remote DB hiccuped) shouldn't kill
+    // the watcher — skip this file; the next event or a restart re-ingests it.
+    console.error(`[db] record failed for ${path}: ${(e as Error).message}`);
+    return null;
+  }
   return report;
 }
 

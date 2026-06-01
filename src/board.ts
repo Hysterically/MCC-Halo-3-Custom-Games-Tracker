@@ -9,7 +9,7 @@ import { config } from "./config.ts";
 import { openDb, matchesChrono, matchCount } from "./db.ts";
 import { formatLeaderboard } from "./discord.ts";
 
-const db = openDb(config.dbPath);
-console.log(`${matchCount(db)} tracked matches in ${config.dbPath}\n`);
-console.log(formatLeaderboard(matchesChrono(db), { start: config.eloStart, k: config.eloK }));
+const db = await openDb(config.dbUrl, config.dbAuthToken);
+console.log(`${await matchCount(db)} tracked matches in ${config.dbUrl}\n`);
+console.log(formatLeaderboard(await matchesChrono(db), { start: config.eloStart, k: config.eloK }));
 db.close();
