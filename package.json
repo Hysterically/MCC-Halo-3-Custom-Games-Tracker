@@ -11,6 +11,7 @@
     "backfill": "tsx src/backfill.ts",
     "board": "tsx src/board.ts",
     "announce": "tsx src/announce.ts",
+    "clear": "tsx src/clear.ts",
     "setup": "tsx src/setup.ts",
     "bundle": "node scripts/bundle.mjs",
     "rebuild": "node scripts/rebuild-entries.mjs",
