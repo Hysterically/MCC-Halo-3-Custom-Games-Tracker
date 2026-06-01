@@ -20,17 +20,18 @@ import {
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
 } from "discord.js";
-import type { DB } from "./db.ts";
+import type { DB, StoredMatch } from "./db.ts";
 import { matchCount, matchesChrono, kvGet, kvSet, kvDelete } from "./db.ts";
 import { computeRatings, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
+import { categorize, CATEGORY_LABEL, BOARD_CATEGORIES, type Category } from "./category.ts";
 
 // --- formatting ------------------------------------------------------------
 
-/** Render the leaderboard as a Discord code block (monospace aligns). */
-export function formatLeaderboard(ratings: Rating[], limit = 20): string {
-  if (!ratings.length) return "**🏆 Halo 3 Customs — ELO Leaderboard**\n_No tracked matches yet._";
-
+/** One leaderboard section (just the code block, no outer heading). */
+function formatSection(title: string, ratings: Rating[], limit = 20): string {
+  const heading = `__**${title}**__`;
+  if (!ratings.length) return `${heading}\n_No matches yet._`;
   const rows = ratings.slice(0, limit);
   const nameW = Math.max(6, ...rows.map((r) => r.gamertag.length));
   const head = `${"#".padEnd(3)} ${"Player".padEnd(nameW)}  Elo   W-L-D   K/D`;
@@ -41,14 +42,39 @@ export function formatLeaderboard(ratings: Rating[], limit = 20): string {
       Math.round(r.rating),
     ).padStart(4)}  ${wld.padEnd(7)} ${kd}`;
   });
-  return ["**🏆 Halo 3 Customs — ELO Leaderboard**", "```", head, ...lines, "```"].join("\n");
+  return [heading, "```", head, ...lines, "```"].join("\n");
+}
+
+/**
+ * The combined leaderboard message: one section per board category, each
+ * computed from only that category's matches so a player's 2v2 ELO is
+ * independent of their FFA ELO.
+ */
+export function formatLeaderboard(matches: StoredMatch[], elo: EloOptions): string {
+  const byCat = new Map<Category, StoredMatch[]>();
+  for (const m of matches) {
+    const cat = categorize(m);
+    const arr = byCat.get(cat) ?? [];
+    arr.push(m);
+    byCat.set(cat, arr);
+  }
+  const sections = BOARD_CATEGORIES.map((c) =>
+    formatSection(`🏆 ${CATEGORY_LABEL[c]} Leaderboard`, computeRatings(byCat.get(c) ?? [], elo)),
+  );
+  return ["**Halo 3 Customs — ELO Standings**", ...sections].join("\n\n");
 }
 
 /** Detailed per-match summary: gametype, teams or FFA, K/D/A, winner. */
 export function formatMatchResult(r: CarnageReport): string {
-  const header = `🎮 **${r.gameTypeName || "Custom Game"}** · ${r.players.length} ${
-    r.players.length === 1 ? "player" : "players"
-  }`;
+  const cat = categorize(r);
+  const tag =
+    cat === "other"
+      ? "_Off-format — not counted toward a leaderboard._"
+      : `_Counted toward **${CATEGORY_LABEL[cat]}** leaderboard._`;
+  const header =
+    `🎮 **${r.gameTypeName || "Custom Game"}** · ${r.players.length} ${
+      r.players.length === 1 ? "player" : "players"
+    }\n${tag}`;
 
   const kd = (p: CarnagePlayer): string =>
     p.deaths ? (p.kills / p.deaths).toFixed(2) : p.kills.toFixed(2);
@@ -175,7 +201,7 @@ export async function upsertLeaderboard(
   elo: EloOptions,
 ): Promise<void> {
   if (!url) return;
-  const content = formatLeaderboard(computeRatings(matchesChrono(db), elo));
+  const content = formatLeaderboard(matchesChrono(db), elo);
   const key = `lb_msg:${webhookId(url)}`;
   const existing = kvGet(db, key);
 
@@ -221,7 +247,7 @@ export async function startBot(
     const ix = i as ChatInputCommandInteraction;
     try {
       if (ix.commandName === "leaderboard") {
-        await ix.reply(formatLeaderboard(computeRatings(matchesChrono(db), elo)));
+        await ix.reply(formatLeaderboard(matchesChrono(db), elo));
       } else if (ix.commandName === "stats") {
         await ix.reply(`📊 ${matchCount(db)} tracked Halo 3 custom matches recorded.`);
       }

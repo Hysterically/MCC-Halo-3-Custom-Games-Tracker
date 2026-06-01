@@ -12,7 +12,6 @@ import { join, extname } from "node:path";
 import { config } from "./config.ts";
 import { openDb, recordMatch, matchCount, matchesChrono } from "./db.ts";
 import { parseCarnageFile } from "./parseCarnage.ts";
-import { computeRatings } from "./elo.ts";
 import { formatLeaderboard } from "./discord.ts";
 
 const dir = process.argv[2] ?? config.carnageDir;
@@ -33,5 +32,5 @@ for (const f of files) {
 }
 
 console.log(`Scanned ${files.length} reports in ${dir}: +${added} new, ${matchCount(db)} total.\n`);
-console.log(formatLeaderboard(computeRatings(matchesChrono(db), { start: config.eloStart, k: config.eloK }), 50));
+console.log(formatLeaderboard(matchesChrono(db), { start: config.eloStart, k: config.eloK }));
 db.close();
