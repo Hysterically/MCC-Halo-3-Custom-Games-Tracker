@@ -91,16 +91,6 @@ npm run watch              # live watcher
 See `.env.example` for all options (MCC folder, DB path, ELO K/start,
 Discord webhook URLs, bot token, guild ID).
 
-To customize how a name shows on the board, create `aliases.json` (or point
-`ALIASES_PATH` elsewhere) mapping in-game Gamertag → display name:
-
-```json
-{ "HystericaIly": "Hysterically" }
-```
-
-Matching is case-insensitive; unknown names render as-is. The file is read
-once per run, so edits take effect on the next start.
-
 ## Important: one tracker PC per group
 
 Each install has its own local SQLite DB. The architecture assumes a
