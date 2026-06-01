@@ -207,6 +207,20 @@ async function writeUserFiles() {
   await writeFile(join(DIST, "README.txt"), README_TXT, "utf8");
 }
 
+// Ship the display-name aliases next to the launcher. The runtime resolves
+// aliasesPath as cwd/aliases.json and Start.bat cd's into the extract folder,
+// so without this the leaderboard renders raw Gamertags (e.g. "HystericaIly"
+// instead of "Hysterically"). Optional: skip silently if there's no file.
+async function copyAliases() {
+  const src = join(ROOT, "aliases.json");
+  if (await exists(src)) {
+    await cp(src, join(DIST, "aliases.json"));
+    console.log("[aliases] bundled aliases.json");
+  } else {
+    console.log("[aliases] no aliases.json at repo root; skipping");
+  }
+}
+
 async function makeZip() {
   console.log(`[zip] building ${ZIP_OUT}`);
   const zip = new AdmZip();
@@ -230,6 +244,7 @@ await extractNodeExe();
 await bundleEntries();
 await copyNativeDeps();
 await writeUserFiles();
+await copyAliases();
 await makeZip();
 
 console.log("\n[bundle] done.");

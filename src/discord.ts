@@ -4,9 +4,10 @@
  *  - results webhook  : posts a rich per-match summary after every new match
  *                       (gametype, teams, K/D/A, winner). Goes to e.g.
  *                       #game-results.
- *  - leaderboard hook : maintains a single message edited in place that
- *                       always reflects the current standings. Goes to e.g.
- *                       #leaderboard. No notification spam.
+ *  - leaderboard hook : posts a fresh standings message after each update and
+ *                       deletes the previous one, so the channel always holds a
+ *                       single, newest leaderboard at the bottom. Goes to e.g.
+ *                       #leaderboard.
  *  - bot              : answers /leaderboard and /stats on demand.
  *
  * Each works without the others; all are no-ops if not configured.
@@ -21,13 +22,16 @@ import {
   type ChatInputCommandInteraction,
 } from "discord.js";
 import type { DB, StoredMatch } from "./db.ts";
-import { matchCount, matchesChrono, kvGet, kvSet, kvDelete } from "./db.ts";
+import { matchCount, matchesChrono, kvGet, kvSet } from "./db.ts";
 import { computeRatings, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import { categorize, CATEGORY_LABEL, BOARD_CATEGORIES, type Category } from "./category.ts";
 import { displayName } from "./aliases.ts";
 
 // --- formatting ------------------------------------------------------------
+
+/** Podium markers for the top three places (gold, silver, bronze). */
+const MEDALS = ["🥇", "🥈", "🥉"];
 
 /** One leaderboard section (just the code block, no outer heading). */
 function formatSection(title: string, ratings: Rating[], limit = 20): string {
@@ -36,13 +40,17 @@ function formatSection(title: string, ratings: Rating[], limit = 20): string {
   const rows = ratings.slice(0, limit);
   const names = rows.map((r) => displayName(r.gamertag));
   const nameW = Math.max(6, ...names.map((n) => n.length));
-  const head = `${"#".padEnd(3)} ${"Player".padEnd(nameW)}  Elo   W-L-D   K/D`;
+  const head = `${"#".padEnd(5)}${"Player".padEnd(nameW)}  Elo   W-L-D    Win%   K/D`;
   const lines = rows.map((r, i) => {
     const kd = r.deaths ? (r.kills / r.deaths).toFixed(2) : r.kills.toFixed(2);
     const wld = `${r.wins}-${r.losses}-${r.draws}`;
-    return `${String(i + 1).padEnd(3)} ${names[i].padEnd(nameW)}  ${String(
+    const winPct = r.games ? `${Math.round((r.wins / r.games) * 100)}%` : "—";
+    // Gold/silver/bronze on the podium; two spaces keep the rest aligned.
+    const marker = MEDALS[i] ?? "  ";
+    const rank = `${marker}${String(i + 1).padEnd(2)}`;
+    return `${rank} ${names[i].padEnd(nameW)}  ${String(
       Math.round(r.rating),
-    ).padStart(4)}  ${wld.padEnd(7)} ${kd}`;
+    ).padStart(4)}  ${wld.padEnd(7)} ${winPct.padStart(4)}  ${kd}`;
   });
   return [heading, "```", head, ...lines, "```"].join("\n");
 }
@@ -86,14 +94,17 @@ export function formatMatchResult(r: CarnageReport): string {
     const ordered = [...r.players].sort((a, b) => a.standing - b.standing);
     const names = ordered.map((p) => displayName(p.gamertag));
     const nameW = Math.max(6, ...names.map((n) => n.length));
+    const head = `${"#".padEnd(5)}${"Player".padEnd(nameW)} ${"Kills".padStart(5)} ${"Deaths".padStart(
+      6,
+    )} ${"Assists".padStart(7)} ${"K/D".padStart(6)}`;
     const lines = ordered.map((p, i) => {
       const marker = i === 0 ? "🏆" : "  ";
-      const kda = `${p.kills}/${p.deaths}/${p.assists}`;
-      return `${marker} ${String(i + 1).padEnd(2)} ${names[i].padEnd(nameW)}  ${kda.padEnd(
-        10,
-      )} K/D ${kd(p)}`;
+      const rank = `${marker}${String(i + 1).padEnd(2)}`;
+      return `${rank} ${names[i].padEnd(nameW)} ${String(p.kills).padStart(5)} ${String(
+        p.deaths,
+      ).padStart(6)} ${String(p.assists).padStart(7)} ${kd(p).padStart(6)}`;
     });
-    return [header, "```", ...lines, "```"].join("\n");
+    return [header, "```", head, ...lines, "```"].join("\n");
   }
 
   // Team game — group, winning team first, players in each team by score desc.
@@ -110,16 +121,20 @@ export function formatMatchResult(r: CarnageReport): string {
   });
 
   const nameW = Math.max(6, ...r.players.map((p) => displayName(p.gamertag).length));
-  const blocks: string[] = [];
+  const colHead = `${" ".repeat(2 + nameW + 1)}${"Kills".padStart(5)} ${"Deaths".padStart(
+    6,
+  )} ${"Assists".padStart(7)} ${"K/D".padStart(6)}`;
+  const blocks: string[] = [colHead];
   for (const tid of teamIds) {
     const members = byTeam.get(tid)!.sort((a, b) => b.score - a.score);
     const label = tid === r.winningTeamId ? `🏆 ${teamName(tid)} — Winner` : teamName(tid);
     const totalScore = members.reduce((s, p) => s + p.score, 0);
     blocks.push(`${label}  (score ${totalScore})`);
     for (const p of members) {
-      const kda = `${p.kills}/${p.deaths}/${p.assists}`;
       blocks.push(
-        `  ${displayName(p.gamertag).padEnd(nameW)}  ${kda.padEnd(10)} K/D ${kd(p)}`,
+        `  ${displayName(p.gamertag).padEnd(nameW)} ${String(p.kills).padStart(5)} ${String(
+          p.deaths,
+        ).padStart(6)} ${String(p.assists).padStart(7)} ${kd(p).padStart(6)}`,
       );
     }
     blocks.push("");
@@ -162,18 +177,13 @@ async function postAndReturnId(url: string, content: string): Promise<string> {
   return body.id;
 }
 
-/** PATCH an existing message. Returns false on 404 so caller can re-create. */
-async function patchMessage(url: string, messageId: string, content: string): Promise<boolean> {
-  const res = await fetch(`${url}/messages/${messageId}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
-  });
-  if (res.status === 404) return false; // message deleted — fall through to repost
-  if (!res.ok) {
-    throw new Error(`Discord PATCH ${res.status}: ${await res.text().catch(() => "")}`);
+/** DELETE an existing message. Swallows 404 (already gone) and never throws. */
+async function deleteMessage(url: string, messageId: string): Promise<void> {
+  try {
+    await fetch(`${url}/messages/${messageId}`, { method: "DELETE" });
+  } catch {
+    // best-effort cleanup — a failed delete just leaves an old message behind
   }
-  return true;
 }
 
 /** Stable per-webhook key so changing the URL implicitly resets stored state. */
@@ -194,9 +204,9 @@ export async function postMatchResult(
 }
 
 /**
- * Upsert the leaderboard message: PATCH the existing one if we have its id,
- * otherwise POST a fresh one and remember it. A 404 on PATCH (message was
- * manually deleted) falls through to a fresh post.
+ * Refresh the leaderboard: post a fresh message so the latest standings land
+ * at the bottom of the channel, then delete the previous leaderboard message
+ * so only the newest one remains.
  */
 export async function upsertLeaderboard(
   url: string | undefined,
@@ -206,14 +216,12 @@ export async function upsertLeaderboard(
   if (!url) return;
   const content = formatLeaderboard(matchesChrono(db), elo);
   const key = `lb_msg:${webhookId(url)}`;
-  const existing = kvGet(db, key);
+  const previous = kvGet(db, key);
 
-  if (existing) {
-    if (await patchMessage(url, existing, content)) return;
-    kvDelete(db, key); // message was gone — fall through and repost
-  }
   const id = await postAndReturnId(url, content);
   kvSet(db, key, id);
+
+  if (previous) await deleteMessage(url, previous);
 }
 
 // --- slash-command bot (unchanged) -----------------------------------------

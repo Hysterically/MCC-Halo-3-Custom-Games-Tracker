@@ -112,7 +112,13 @@ try {
   if (!results) console.log("  (No #game-results URL set - per-match posts will be disabled.)");
   if (!leaderboard) console.log("  (No #leaderboard URL set - live leaderboard will be disabled.)");
   console.log("");
-  console.log("All set. The tracker will start now.");
+  // Setup.bat runs us with --force and then exits; only Start.bat goes on to
+  // launch the watcher. Don't promise tracking is starting when it isn't.
+  console.log(
+    FORCE
+      ? "All set. Run Start.bat to begin tracking."
+      : "All set. The tracker will start now.",
+  );
 } finally {
   rl.close();
 }

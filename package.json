@@ -13,6 +13,7 @@
     "announce": "tsx src/announce.ts",
     "setup": "tsx src/setup.ts",
     "bundle": "node scripts/bundle.mjs",
+    "rebuild": "node scripts/rebuild-entries.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
