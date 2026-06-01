@@ -20,6 +20,8 @@ export interface Config {
   carnageDir: string;
   /** SQLite database file. Created on first run. */
   dbPath: string;
+  /** JSON map of Gamertag -> preferred display name on the leaderboard. */
+  aliasesPath: string;
   /** Starting rating every new player is seeded at. */
   eloStart: number;
   /** ELO K-factor (rating swing per game). */
@@ -40,6 +42,7 @@ const legacyWebhook = env("DISCORD_WEBHOOK_URL");
 export const config: Config = {
   carnageDir: env("MCC_CARNAGE_DIR") ?? join(homedir(), "AppData", "LocalLow", "MCC", "Temporary"),
   dbPath: env("DB_PATH") ?? join(process.cwd(), "data", "h3.db"),
+  aliasesPath: env("ALIASES_PATH") ?? join(process.cwd(), "aliases.json"),
   eloStart: Number(env("ELO_START") ?? 1200),
   eloK: Number(env("ELO_K") ?? 32),
   discordResultsWebhookUrl: env("DISCORD_RESULTS_WEBHOOK_URL") ?? legacyWebhook,

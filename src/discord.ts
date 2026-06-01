@@ -25,6 +25,7 @@ import { matchCount, matchesChrono, kvGet, kvSet, kvDelete } from "./db.ts";
 import { computeRatings, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import { categorize, CATEGORY_LABEL, BOARD_CATEGORIES, type Category } from "./category.ts";
+import { displayName } from "./aliases.ts";
 
 // --- formatting ------------------------------------------------------------
 
@@ -33,12 +34,13 @@ function formatSection(title: string, ratings: Rating[], limit = 20): string {
   const heading = `__**${title}**__`;
   if (!ratings.length) return `${heading}\n_No matches yet._`;
   const rows = ratings.slice(0, limit);
-  const nameW = Math.max(6, ...rows.map((r) => r.gamertag.length));
+  const names = rows.map((r) => displayName(r.gamertag));
+  const nameW = Math.max(6, ...names.map((n) => n.length));
   const head = `${"#".padEnd(3)} ${"Player".padEnd(nameW)}  Elo   W-L-D   K/D`;
   const lines = rows.map((r, i) => {
     const kd = r.deaths ? (r.kills / r.deaths).toFixed(2) : r.kills.toFixed(2);
     const wld = `${r.wins}-${r.losses}-${r.draws}`;
-    return `${String(i + 1).padEnd(3)} ${r.gamertag.padEnd(nameW)}  ${String(
+    return `${String(i + 1).padEnd(3)} ${names[i].padEnd(nameW)}  ${String(
       Math.round(r.rating),
     ).padStart(4)}  ${wld.padEnd(7)} ${kd}`;
   });
@@ -82,11 +84,12 @@ export function formatMatchResult(r: CarnageReport): string {
   if (!r.teamsEnabled) {
     // FFA — rank by standing (0 = best).
     const ordered = [...r.players].sort((a, b) => a.standing - b.standing);
-    const nameW = Math.max(6, ...ordered.map((p) => p.gamertag.length));
+    const names = ordered.map((p) => displayName(p.gamertag));
+    const nameW = Math.max(6, ...names.map((n) => n.length));
     const lines = ordered.map((p, i) => {
       const marker = i === 0 ? "🏆" : "  ";
       const kda = `${p.kills}/${p.deaths}/${p.assists}`;
-      return `${marker} ${String(i + 1).padEnd(2)} ${p.gamertag.padEnd(nameW)}  ${kda.padEnd(
+      return `${marker} ${String(i + 1).padEnd(2)} ${names[i].padEnd(nameW)}  ${kda.padEnd(
         10,
       )} K/D ${kd(p)}`;
     });
@@ -106,7 +109,7 @@ export function formatMatchResult(r: CarnageReport): string {
     return a - b;
   });
 
-  const nameW = Math.max(6, ...r.players.map((p) => p.gamertag.length));
+  const nameW = Math.max(6, ...r.players.map((p) => displayName(p.gamertag).length));
   const blocks: string[] = [];
   for (const tid of teamIds) {
     const members = byTeam.get(tid)!.sort((a, b) => b.score - a.score);
@@ -116,7 +119,7 @@ export function formatMatchResult(r: CarnageReport): string {
     for (const p of members) {
       const kda = `${p.kills}/${p.deaths}/${p.assists}`;
       blocks.push(
-        `  ${p.gamertag.padEnd(nameW)}  ${kda.padEnd(10)} K/D ${kd(p)}`,
+        `  ${displayName(p.gamertag).padEnd(nameW)}  ${kda.padEnd(10)} K/D ${kd(p)}`,
       );
     }
     blocks.push("");
