@@ -9,12 +9,14 @@
  * a per-match summary to #game-results, and edit the live leaderboard
  * message in #leaderboard.
  *
- * On startup it ingests any reports already in the folder (silently — no
- * Discord spam) so the DB is current before live watching begins.
+ * On startup we intentionally do NOT auto-ingest historic reports — the
+ * MCC folder accumulates years of XMLs and silently importing them would
+ * resurrect dead matches every time the watcher restarts (especially after
+ * a wipe). Use `npm run backfill` to opt in to historic ingest.
  */
 
-import { readdir, stat } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { stat } from "node:fs/promises";
+import { extname } from "node:path";
 import chokidar from "chokidar";
 import { config } from "./config.ts";
 import { openDb, recordMatch, matchCount } from "./db.ts";
@@ -45,20 +47,10 @@ async function ingest(path: string): Promise<CarnageReport | null> {
 const label = (r: CarnageReport): string =>
   `${r.gameTypeName} · ${r.players.length}p · winner: ${r.winners.join(", ") || "—"}`;
 
-// --- startup backfill (silent) ---------------------------------------------
-let startupNew = 0;
-try {
-  const files = (await readdir(config.carnageDir)).filter(isCarnage);
-  for (const f of files) if (await ingest(join(config.carnageDir, f))) startupNew++;
-  console.log(
-    `[startup] scanned ${files.length} reports in ${config.carnageDir}; ` +
-      `${startupNew} new, ${matchCount(db)} total`,
-  );
-} catch (e) {
-  console.error(`[startup] cannot read ${config.carnageDir}: ${(e as Error).message}`);
-  console.error("Set MCC_CARNAGE_DIR (see .env.example) and try again.");
-  process.exit(1);
-}
+// --- startup -------------------------------------------------------------
+// No auto-backfill: historic reports already in the folder are ignored.
+// Run `npm run backfill` for intentional historic ingest.
+console.log(`[watch] tracking new matches in ${config.carnageDir}`);
 
 // --- optional bot ----------------------------------------------------------
 if (config.discordBotToken) {
@@ -76,8 +68,8 @@ if (!config.discordLeaderboardWebhookUrl) {
   console.log("[discord] no DISCORD_LEADERBOARD_WEBHOOK_URL — live leaderboard disabled");
 }
 
-// Refresh the leaderboard once on startup so it reflects any silent
-// backfill ingests (and survives DB edits made while the watcher was off).
+// Refresh the leaderboard once on startup so it survives DB edits (e.g. a
+// manual wipe) or a manually-deleted leaderboard message.
 if (config.discordLeaderboardWebhookUrl) {
   try {
     await upsertLeaderboard(config.discordLeaderboardWebhookUrl, db, elo);
