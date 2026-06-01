@@ -10,6 +10,7 @@
     "watch": "tsx src/watch.ts",
     "backfill": "tsx src/backfill.ts",
     "board": "tsx src/board.ts",
+    "announce": "tsx src/announce.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
