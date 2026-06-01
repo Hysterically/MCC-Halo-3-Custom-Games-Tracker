@@ -3,3 +3,4 @@ node_modules/
 *.log
 data/
 dist/
+h3-tracker-windows.zip

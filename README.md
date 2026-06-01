@@ -37,28 +37,50 @@ Discord delivery are built and smoke-tested end to end.
 - **Discord:** webhook auto-posts the board after each new match; an optional
   bot answers `/leaderboard` and `/stats`.
 
-## Run it (on the gaming PC)
+## Run it — for end users (no Node install required)
+
+The recommended distribution path: `npm run bundle` produces
+`h3-tracker-windows.zip` (~30 MB). Ship that to whoever's hosting.
+Their flow:
+
+1. Extract the zip.
+2. Double-click **Start.bat**.
+3. First time only: paste two Discord webhook URLs the wizard asks for.
+4. Leave the window open while playing.
+
+That's it — no terminal, no Node.js install, no `.env` editing.
+
+Reconfiguring later: double-click **Setup.bat** to re-enter the URLs.
+
+## Run it — from source (developers)
 
 ```powershell
 npm install
 copy .env.example .env     # optional — fill in Discord bits if you want them
-npm run watch              # ingests existing reports, then watches live
+npm run watch              # live watcher
 ```
-
-Zero config works: with no `.env` it watches
-`%USERPROFILE%\AppData\LocalLow\MCC\Temporary` and just keeps the local DB
-(Discord disabled until you add a webhook URL / bot token).
 
 ### Scripts
 
 | command | what it does |
 |---|---|
 | `npm run watch` | live watcher: parse → dedupe → store → ELO → Discord |
+| `npm run setup` | interactive `.env` wizard (also runs as first-launch from Start.bat) |
+| `npm run announce` | force-refresh the live leaderboard message |
 | `npm run backfill -- "<folder>"` | one-shot ingest a folder of old reports |
-| `npm run board` | print current standings from the DB (no Discord) |
+| `npm run board` | print current standings to the console |
+| `npm run bundle` | build the Windows distribution zip |
 | `npm run inspect` | dump an XML's structure (schema discovery) |
 | `npm run parse` | classify reports (which are tracked H3 customs) |
 | `npm run typecheck` | `tsc --noEmit` |
 
 See `.env.example` for all options (MCC folder, DB path, ELO K/start,
-Discord webhook URL, bot token, guild ID).
+Discord webhook URLs, bot token, guild ID).
+
+## Important: one tracker PC per group
+
+Each install has its own local SQLite DB. The architecture assumes a
+single "tracker PC" (whoever hosts most often). If two people run the
+tracker during the same game you get duplicate Discord posts and
+divergent leaderboards. Pick one host. Multi-PC sync would need a
+shared DB — out of scope for the current design.

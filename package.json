@@ -11,6 +11,8 @@
     "backfill": "tsx src/backfill.ts",
     "board": "tsx src/board.ts",
     "announce": "tsx src/announce.ts",
+    "setup": "tsx src/setup.ts",
+    "bundle": "node scripts/bundle.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -21,8 +23,11 @@
     "fast-xml-parser": "^4.5.1"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.2",
+    "adm-zip": "^0.5.17",
+    "esbuild": "^0.28.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
