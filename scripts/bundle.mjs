@@ -210,7 +210,10 @@ async function writeUserFiles() {
 async function makeZip() {
   console.log(`[zip] building ${ZIP_OUT}`);
   const zip = new AdmZip();
-  zip.addLocalFolder(DIST, "h3-tracker");
+  // Flat layout — Start.bat sits at the root of the zip so that on
+  // extraction Windows' default "extract to folder named after the zip"
+  // produces <folder>/Start.bat instead of <folder>/h3-tracker/Start.bat.
+  zip.addLocalFolder(DIST);
   zip.writeZip(ZIP_OUT);
   const size = (await stat(ZIP_OUT)).size;
   console.log(`[zip] ${ZIP_OUT} (${(size / 1024 / 1024).toFixed(1)} MB)`);
