@@ -1,10 +1,15 @@
 /**
- * Discord delivery. Two independent, optional channels:
+ * Discord delivery. Three independent, optional channels:
  *
- *  - webhook  : the watcher posts the updated board after every new match.
- *  - bot      : answers /leaderboard on demand (and /lastmatch).
+ *  - results webhook  : posts a rich per-match summary after every new match
+ *                       (gametype, teams, K/D/A, winner). Goes to e.g.
+ *                       #game-results.
+ *  - leaderboard hook : maintains a single message edited in place that
+ *                       always reflects the current standings. Goes to e.g.
+ *                       #leaderboard. No notification spam.
+ *  - bot              : answers /leaderboard and /stats on demand.
  *
- * Either works without the other; both are no-ops if not configured.
+ * Each works without the others; all are no-ops if not configured.
  */
 
 import {
@@ -16,14 +21,15 @@ import {
   type ChatInputCommandInteraction,
 } from "discord.js";
 import type { DB } from "./db.ts";
-import { matchCount, matchesChrono } from "./db.ts";
+import { matchCount, matchesChrono, kvGet, kvSet, kvDelete } from "./db.ts";
 import { computeRatings, type EloOptions, type Rating } from "./elo.ts";
+import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 
-const medal = (i: number): string => ["🥇", "🥈", "🥉"][i] ?? `\`${String(i + 1).padStart(2)}\``;
+// --- formatting ------------------------------------------------------------
 
-/** Render the top of the table as a Discord code block (monospace aligns). */
+/** Render the leaderboard as a Discord code block (monospace aligns). */
 export function formatLeaderboard(ratings: Rating[], limit = 20): string {
-  if (!ratings.length) return "_No tracked Halo 3 customs yet._";
+  if (!ratings.length) return "**🏆 Halo 3 Customs — ELO Leaderboard**\n_No tracked matches yet._";
 
   const rows = ratings.slice(0, limit);
   const nameW = Math.max(6, ...rows.map((r) => r.gamertag.length));
@@ -38,6 +44,68 @@ export function formatLeaderboard(ratings: Rating[], limit = 20): string {
   return ["**🏆 Halo 3 Customs — ELO Leaderboard**", "```", head, ...lines, "```"].join("\n");
 }
 
+/** Detailed per-match summary: gametype, teams or FFA, K/D/A, winner. */
+export function formatMatchResult(r: CarnageReport): string {
+  const header = `🎮 **${r.gameTypeName || "Custom Game"}** · ${r.players.length} ${
+    r.players.length === 1 ? "player" : "players"
+  }`;
+
+  const kd = (p: CarnagePlayer): string =>
+    p.deaths ? (p.kills / p.deaths).toFixed(2) : p.kills.toFixed(2);
+
+  if (!r.teamsEnabled) {
+    // FFA — rank by standing (0 = best).
+    const ordered = [...r.players].sort((a, b) => a.standing - b.standing);
+    const nameW = Math.max(6, ...ordered.map((p) => p.gamertag.length));
+    const lines = ordered.map((p, i) => {
+      const marker = i === 0 ? "🏆" : "  ";
+      const kda = `${p.kills}/${p.deaths}/${p.assists}`;
+      return `${marker} ${String(i + 1).padEnd(2)} ${p.gamertag.padEnd(nameW)}  ${kda.padEnd(
+        10,
+      )} K/D ${kd(p)}`;
+    });
+    return [header, "```", ...lines, "```"].join("\n");
+  }
+
+  // Team game — group, winning team first, players in each team by score desc.
+  const byTeam = new Map<number, CarnagePlayer[]>();
+  for (const p of r.players) {
+    const arr = byTeam.get(p.teamId) ?? [];
+    arr.push(p);
+    byTeam.set(p.teamId, arr);
+  }
+  const teamIds = [...byTeam.keys()].sort((a, b) => {
+    if (a === r.winningTeamId) return -1;
+    if (b === r.winningTeamId) return 1;
+    return a - b;
+  });
+
+  const nameW = Math.max(6, ...r.players.map((p) => p.gamertag.length));
+  const blocks: string[] = [];
+  for (const tid of teamIds) {
+    const members = byTeam.get(tid)!.sort((a, b) => b.score - a.score);
+    const label = tid === r.winningTeamId ? `🏆 ${teamName(tid)} — Winner` : teamName(tid);
+    const totalScore = members.reduce((s, p) => s + p.score, 0);
+    blocks.push(`${label}  (score ${totalScore})`);
+    for (const p of members) {
+      const kda = `${p.kills}/${p.deaths}/${p.assists}`;
+      blocks.push(
+        `  ${p.gamertag.padEnd(nameW)}  ${kda.padEnd(10)} K/D ${kd(p)}`,
+      );
+    }
+    blocks.push("");
+  }
+  return [header, "```", ...blocks, "```"].join("\n").trimEnd();
+}
+
+const TEAM_NAMES = ["Red", "Blue", "Green", "Orange", "Purple", "Gold", "Brown", "Pink"];
+function teamName(id: number): string {
+  return TEAM_NAMES[id] ? `${TEAM_NAMES[id]} Team` : `Team ${id}`;
+}
+
+// --- webhook plumbing ------------------------------------------------------
+
+/** Plain POST — fire and forget, no message id returned. */
 export async function postWebhook(url: string, content: string): Promise<void> {
   const res = await fetch(url, {
     method: "POST",
@@ -49,17 +117,77 @@ export async function postWebhook(url: string, content: string): Promise<void> {
   }
 }
 
-/** Convenience used by the watcher: recompute + post the board, if configured. */
-export async function announceBoard(
+/** POST with ?wait=true so Discord returns the created message (incl. id). */
+async function postAndReturnId(url: string, content: string): Promise<string> {
+  const u = new URL(url);
+  u.searchParams.set("wait", "true");
+  const res = await fetch(u, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+  });
+  if (!res.ok) {
+    throw new Error(`Discord webhook ${res.status}: ${await res.text().catch(() => "")}`);
+  }
+  const body = (await res.json()) as { id: string };
+  return body.id;
+}
+
+/** PATCH an existing message. Returns false on 404 so caller can re-create. */
+async function patchMessage(url: string, messageId: string, content: string): Promise<boolean> {
+  const res = await fetch(`${url}/messages/${messageId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+  });
+  if (res.status === 404) return false; // message deleted — fall through to repost
+  if (!res.ok) {
+    throw new Error(`Discord PATCH ${res.status}: ${await res.text().catch(() => "")}`);
+  }
+  return true;
+}
+
+/** Stable per-webhook key so changing the URL implicitly resets stored state. */
+function webhookId(url: string): string {
+  const m = url.match(/\/webhooks\/(\d+)\//);
+  return m ? m[1] : url;
+}
+
+// --- high-level helpers used by the watcher --------------------------------
+
+/** Post a per-match summary to the results channel (no-op if no URL). */
+export async function postMatchResult(
+  url: string | undefined,
+  report: CarnageReport,
+): Promise<void> {
+  if (!url) return;
+  await postWebhook(url, formatMatchResult(report));
+}
+
+/**
+ * Upsert the leaderboard message: PATCH the existing one if we have its id,
+ * otherwise POST a fresh one and remember it. A 404 on PATCH (message was
+ * manually deleted) falls through to a fresh post.
+ */
+export async function upsertLeaderboard(
+  url: string | undefined,
   db: DB,
   elo: EloOptions,
-  webhookUrl: string | undefined,
-  header?: string,
 ): Promise<void> {
-  if (!webhookUrl) return;
-  const board = formatLeaderboard(computeRatings(matchesChrono(db), elo));
-  await postWebhook(webhookUrl, header ? `${header}\n${board}` : board);
+  if (!url) return;
+  const content = formatLeaderboard(computeRatings(matchesChrono(db), elo));
+  const key = `lb_msg:${webhookId(url)}`;
+  const existing = kvGet(db, key);
+
+  if (existing) {
+    if (await patchMessage(url, existing, content)) return;
+    kvDelete(db, key); // message was gone — fall through and repost
+  }
+  const id = await postAndReturnId(url, content);
+  kvSet(db, key, id);
 }
+
+// --- slash-command bot (unchanged) -----------------------------------------
 
 const COMMANDS = [
   new SlashCommandBuilder()
@@ -70,10 +198,6 @@ const COMMANDS = [
     .setDescription("How many tracked matches are recorded"),
 ].map((c) => c.toJSON());
 
-/**
- * Start the slash-command bot. Resolves once it is logged in and listening;
- * keeps running until the process exits.
- */
 export async function startBot(
   token: string,
   guildId: string | undefined,
@@ -84,7 +208,6 @@ export async function startBot(
 
   client.once("clientReady", async (c) => {
     const rest = new REST({ version: "10" }).setToken(token);
-    // Guild-scoped registration is instant; global can take ~1h to appear.
     if (guildId) {
       await rest.put(Routes.applicationGuildCommands(c.user.id, guildId), { body: COMMANDS });
     } else {

@@ -65,8 +65,27 @@ export function openDb(path: string): DB {
       PRIMARY KEY (match_id, xuid)
     );
     CREATE INDEX IF NOT EXISTS idx_matches_played_at ON matches(played_at);
+    CREATE TABLE IF NOT EXISTS kv (
+      k TEXT PRIMARY KEY,
+      v TEXT NOT NULL
+    );
   `);
   return db;
+}
+
+export function kvGet(db: DB, k: string): string | undefined {
+  const row = db.prepare("SELECT v FROM kv WHERE k = ?").get(k) as { v: string } | undefined;
+  return row?.v;
+}
+
+export function kvSet(db: DB, k: string, v: string): void {
+  db.prepare(
+    "INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+  ).run(k, v);
+}
+
+export function kvDelete(db: DB, k: string): void {
+  db.prepare("DELETE FROM kv WHERE k = ?").run(k);
 }
 
 export function hasMatch(db: DB, matchId: string): boolean {

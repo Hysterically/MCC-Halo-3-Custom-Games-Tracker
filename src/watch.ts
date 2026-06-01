@@ -5,8 +5,9 @@
  *
  * Watches the MCC carnage folder. Every time MCC drops a new
  * mpcarnagereport*.xml it is parsed; if it's a completed Halo 3 custom we
- * record it (deduped on GameUniqueId), recompute ELO from full history, and
- * post the updated leaderboard to Discord.
+ * record it (deduped on GameUniqueId), recompute ELO from full history, post
+ * a per-match summary to #game-results, and edit the live leaderboard
+ * message in #leaderboard.
  *
  * On startup it ingests any reports already in the folder (silently — no
  * Discord spam) so the DB is current before live watching begins.
@@ -17,8 +18,8 @@ import { join, extname } from "node:path";
 import chokidar from "chokidar";
 import { config } from "./config.ts";
 import { openDb, recordMatch, matchCount } from "./db.ts";
-import { parseCarnageFile } from "./parseCarnage.ts";
-import { announceBoard, startBot } from "./discord.ts";
+import { parseCarnageFile, type CarnageReport } from "./parseCarnage.ts";
+import { postMatchResult, upsertLeaderboard, startBot } from "./discord.ts";
 
 const elo = { start: config.eloStart, k: config.eloK };
 const isCarnage = (f: string): boolean =>
@@ -27,9 +28,9 @@ const isCarnage = (f: string): boolean =>
 const db = openDb(config.dbPath);
 console.log(`[db] ${config.dbPath} — ${matchCount(db)} matches before this run`);
 
-/** Parse one file and record it if it's a tracked match. Returns a label if new. */
-async function ingest(path: string): Promise<string | null> {
-  let report;
+/** Parse one file and record it if it's a tracked match. Returns it on success. */
+async function ingest(path: string): Promise<CarnageReport | null> {
+  let report: CarnageReport;
   try {
     report = await parseCarnageFile(path);
   } catch (e) {
@@ -38,10 +39,11 @@ async function ingest(path: string): Promise<string | null> {
   }
   if (!report.tracked) return null;
   if (!recordMatch(db, report)) return null; // dupe — already have it
-  return `${report.gameTypeName} · ${report.players.length}p · winner: ${
-    report.winners.join(", ") || "—"
-  }`;
+  return report;
 }
+
+const label = (r: CarnageReport): string =>
+  `${r.gameTypeName} · ${r.players.length}p · winner: ${r.winners.join(", ") || "—"}`;
 
 // --- startup backfill (silent) ---------------------------------------------
 let startupNew = 0;
@@ -67,12 +69,21 @@ if (config.discordBotToken) {
   console.log("[discord] no DISCORD_BOT_TOKEN — slash commands disabled");
 }
 
-if (config.discordWebhookUrl) {
-  if (startupNew > 0) {
-    await announceBoard(db, elo, config.discordWebhookUrl, "♻️ Tracker restarted — current standings:");
+if (!config.discordResultsWebhookUrl) {
+  console.log("[discord] no DISCORD_RESULTS_WEBHOOK_URL — per-match posts disabled");
+}
+if (!config.discordLeaderboardWebhookUrl) {
+  console.log("[discord] no DISCORD_LEADERBOARD_WEBHOOK_URL — live leaderboard disabled");
+}
+
+// Refresh the leaderboard once on startup so it reflects any silent
+// backfill ingests (and survives DB edits made while the watcher was off).
+if (config.discordLeaderboardWebhookUrl) {
+  try {
+    await upsertLeaderboard(config.discordLeaderboardWebhookUrl, db, elo);
+  } catch (e) {
+    console.error("[discord] startup leaderboard refresh failed:", (e as Error).message);
   }
-} else {
-  console.log("[discord] no DISCORD_WEBHOOK_URL — auto-posting disabled");
 }
 
 // --- live watch ------------------------------------------------------------
@@ -90,13 +101,19 @@ async function onFile(path: string): Promise<void> {
   if (seen.get(path) === m) return;
   seen.set(path, m);
 
-  const label = await ingest(path);
-  if (!label) return;
-  console.log(`[match] ${label}`);
+  const report = await ingest(path);
+  if (!report) return;
+  console.log(`[match] ${label(report)}`);
+
   try {
-    await announceBoard(db, elo, config.discordWebhookUrl, `🎮 New match: **${label}**`);
+    await postMatchResult(config.discordResultsWebhookUrl, report);
   } catch (e) {
-    console.error("[discord] post failed:", (e as Error).message);
+    console.error("[discord] result post failed:", (e as Error).message);
+  }
+  try {
+    await upsertLeaderboard(config.discordLeaderboardWebhookUrl, db, elo);
+  } catch (e) {
+    console.error("[discord] leaderboard upsert failed:", (e as Error).message);
   }
 }
 
