@@ -44,11 +44,16 @@ Discord delivery are built and smoke-tested end to end.
   (see [Running on more than one PC](#running-on-more-than-one-pc)). Players
   keyed by XUID so Gamertag changes don't split history.
 - **Discord** splits into two channels:
-  - **#game-results** — a per-match summary (gametype, teams or FFA, K/D/A,
-    winner) posted after every new match.
+  - **#game-results** — a rendered carnage-screen image (styled after Halo 3's
+    post-game screen: team-coloured rows with Score / Kills / Assists / Deaths)
+    posted after every new match, with map + leaderboard-category caption.
+    Falls back to a text summary if rendering fails.
   - **#leaderboard** — a single always-current message, edited in place,
     with separate **2v2 / 4v4 / FFA** standings sections.
   - An optional bot answers `/leaderboard` and `/stats` on demand.
+    `/stats <player>` shows that player's ELO, rank, W-L-D, Win% and K/D in
+    each category (2v2 / 4v4 / FFA) plus an overall line; `/stats` with no
+    player just reports how many matches are recorded.
 - **Display aliases:** `aliases.json` maps a Gamertag to a preferred display
   name (e.g. `HystericaIly` → `Hysterically`) without rewriting any history —
   matches stay keyed by XUID, only the rendered label changes.

@@ -8,7 +8,7 @@
  *                       deletes the previous one, so the channel always holds a
  *                       single, newest leaderboard at the bottom. Goes to e.g.
  *                       #leaderboard.
- *  - bot              : answers /leaderboard and /stats on demand.
+ *  - bot              : answers /leaderboard and /stats [player] on demand.
  *
  * Each works without the others; all are no-ops if not configured.
  */
@@ -27,6 +27,7 @@ import { computeRatings, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import { categorize, CATEGORY_LABEL, BOARD_CATEGORIES, type Category } from "./category.ts";
 import { displayName } from "./aliases.ts";
+import { renderCarnagePng } from "./renderCarnage.ts";
 
 // --- formatting ------------------------------------------------------------
 
@@ -61,6 +62,15 @@ function formatSection(title: string, ratings: Rating[], limit = 20): string {
  * independent of their FFA ELO.
  */
 export function formatLeaderboard(matches: StoredMatch[], elo: EloOptions): string {
+  const byCat = groupByCategory(matches);
+  const sections = BOARD_CATEGORIES.map((c) =>
+    formatSection(`🏆 ${CATEGORY_LABEL[c]} Leaderboard`, computeRatings(byCat.get(c) ?? [], elo)),
+  );
+  return ["**Halo 3 Customs — ELO Standings**", ...sections].join("\n\n");
+}
+
+/** Group matches by leaderboard category (shared by board + per-player stats). */
+function groupByCategory(matches: StoredMatch[]): Map<Category, StoredMatch[]> {
   const byCat = new Map<Category, StoredMatch[]>();
   for (const m of matches) {
     const cat = categorize(m);
@@ -68,10 +78,122 @@ export function formatLeaderboard(matches: StoredMatch[], elo: EloOptions): stri
     arr.push(m);
     byCat.set(cat, arr);
   }
-  const sections = BOARD_CATEGORIES.map((c) =>
-    formatSection(`🏆 ${CATEGORY_LABEL[c]} Leaderboard`, computeRatings(byCat.get(c) ?? [], elo)),
+  return byCat;
+}
+
+/**
+ * Resolve a free-text query (a Gamertag or display alias, possibly partial) to
+ * a single player. Matches case-insensitively against both the in-game
+ * Gamertag and its display alias; prefers an exact hit, then a prefix, then a
+ * substring. Returns the XUID and the display label, or null if nothing matches.
+ */
+function resolvePlayer(
+  matches: StoredMatch[],
+  query: string,
+): { xuid: string; label: string } | null {
+  const q = query.trim().toLowerCase();
+  if (!q) return null;
+
+  // XUID -> most-recent Gamertag (matches are chronological, so last wins).
+  const names = new Map<string, string>();
+  for (const m of matches) for (const p of m.players) if (p.xuid) names.set(p.xuid, p.gamertag);
+
+  const candidates = [...names.entries()].map(([xuid, gamertag]) => ({
+    xuid,
+    label: displayName(gamertag),
+    keys: [gamertag.toLowerCase(), displayName(gamertag).toLowerCase()],
+  }));
+
+  const find = (pred: (k: string) => boolean) =>
+    candidates.find((c) => c.keys.some(pred));
+
+  const hit =
+    find((k) => k === q) ?? find((k) => k.startsWith(q)) ?? find((k) => k.includes(q));
+  return hit ? { xuid: hit.xuid, label: hit.label } : null;
+}
+
+/**
+ * Per-player stats card: ELO, rank, W-L-D, Win% and K/D in each board category
+ * (2v2 / 4v4 / FFA), plus an overall line. Categories the player hasn't played
+ * are omitted. `query` is a Gamertag or display alias (partial accepted).
+ */
+export function formatPlayerStats(
+  matches: StoredMatch[],
+  elo: EloOptions,
+  query: string,
+): string {
+  const who = resolvePlayer(matches, query);
+  if (!who) return `🔍 No player matching **${query}** found.`;
+
+  const byCat = groupByCategory(matches);
+  const rows: { mode: string; rank: string; elo: string; wld: string; win: string; kd: string }[] =
+    [];
+  let games = 0,
+    wins = 0,
+    losses = 0,
+    draws = 0,
+    kills = 0,
+    deaths = 0;
+
+  for (const c of BOARD_CATEGORIES) {
+    const ratings = computeRatings(byCat.get(c) ?? [], elo);
+    const idx = ratings.findIndex((r) => r.xuid === who.xuid);
+    if (idx === -1) continue;
+    const r = ratings[idx];
+    games += r.games;
+    wins += r.wins;
+    losses += r.losses;
+    draws += r.draws;
+    kills += r.kills;
+    deaths += r.deaths;
+    rows.push({
+      mode: CATEGORY_LABEL[c],
+      rank: `#${idx + 1}/${ratings.length}`,
+      elo: String(Math.round(r.rating)),
+      wld: `${r.wins}-${r.losses}-${r.draws}`,
+      win: r.games ? `${Math.round((r.wins / r.games) * 100)}%` : "—",
+      kd: r.deaths ? (r.kills / r.deaths).toFixed(2) : r.kills.toFixed(2),
+    });
+  }
+
+  if (!rows.length) {
+    return `📊 **${who.label}** hasn't played any ranked (2v2 / 4v4 / FFA) matches yet.`;
+  }
+
+  const w = {
+    mode: Math.max(4, ...rows.map((r) => r.mode.length)),
+    rank: Math.max(4, ...rows.map((r) => r.rank.length)),
+    elo: Math.max(3, ...rows.map((r) => r.elo.length)),
+    wld: Math.max(5, ...rows.map((r) => r.wld.length)),
+    win: Math.max(4, ...rows.map((r) => r.win.length)),
+  };
+  const head =
+    `${"Mode".padEnd(w.mode)}  ${"Rank".padEnd(w.rank)}  ${"Elo".padStart(w.elo)}  ` +
+    `${"W-L-D".padEnd(w.wld)}  ${"Win%".padStart(w.win)}   K/D`;
+  const lines = rows.map(
+    (r) =>
+      `${r.mode.padEnd(w.mode)}  ${r.rank.padEnd(w.rank)}  ${r.elo.padStart(w.elo)}  ` +
+      `${r.wld.padEnd(w.wld)}  ${r.win.padStart(w.win)}  ${r.kd}`,
   );
-  return ["**Halo 3 Customs — ELO Standings**", ...sections].join("\n\n");
+
+  const overallKd = deaths ? (kills / deaths).toFixed(2) : kills.toFixed(2);
+  const overallWin = games ? `${Math.round((wins / games) * 100)}%` : "—";
+  const overall = `Overall: ${games} games · ${wins}-${losses}-${draws} (${overallWin}) · K/D ${overallKd}`;
+
+  return [`📊 **${who.label}** — Halo 3 Customs stats`, "```", head, ...lines, "", overall, "```"].join(
+    "\n",
+  );
+}
+
+/** Short caption posted above the rendered carnage image. */
+export function formatMatchCaption(r: CarnageReport): string {
+  const cat = categorize(r);
+  const tag =
+    cat === "other"
+      ? "_Off-format — not counted toward a leaderboard._"
+      : `_Counted toward **${CATEGORY_LABEL[cat]}** leaderboard._`;
+  const map = [r.mapName, r.mapVariant].filter(Boolean).join(" — ");
+  return `${map ? `🗺️ **${map}**\n` : ""}${tag}`;
 }
 
 /** Detailed per-match summary: gametype, teams or FFA, K/D/A, winner. */
@@ -81,10 +203,11 @@ export function formatMatchResult(r: CarnageReport): string {
     cat === "other"
       ? "_Off-format — not counted toward a leaderboard._"
       : `_Counted toward **${CATEGORY_LABEL[cat]}** leaderboard._`;
+  const map = [r.mapName, r.mapVariant].filter(Boolean).join(" — ");
   const header =
     `🎮 **${r.gameTypeName || "Custom Game"}** · ${r.players.length} ${
       r.players.length === 1 ? "player" : "players"
-    }\n${tag}`;
+    }${map ? `\n🗺️ ${map}` : ""}\n${tag}`;
 
   const kd = (p: CarnagePlayer): string =>
     p.deaths ? (p.kills / p.deaths).toFixed(2) : p.kills.toFixed(2);
@@ -149,6 +272,17 @@ function teamName(id: number): string {
 
 // --- webhook plumbing ------------------------------------------------------
 
+/** POST with a PNG attachment (multipart) — used for the carnage image. */
+async function postWebhookImage(url: string, content: string, png: Buffer): Promise<void> {
+  const form = new FormData();
+  form.append("payload_json", JSON.stringify({ content, allowed_mentions: { parse: [] } }));
+  form.append("files[0]", new Blob([new Uint8Array(png)], { type: "image/png" }), "carnage.png");
+  const res = await fetch(url, { method: "POST", body: form });
+  if (!res.ok) {
+    throw new Error(`Discord webhook ${res.status}: ${await res.text().catch(() => "")}`);
+  }
+}
+
 /** Plain POST — fire and forget, no message id returned. */
 export async function postWebhook(url: string, content: string): Promise<void> {
   const res = await fetch(url, {
@@ -211,13 +345,27 @@ function webhookId(url: string): string {
 
 // --- high-level helpers used by the watcher --------------------------------
 
-/** Post a per-match summary to the results channel (no-op if no URL). */
+/**
+ * Post a per-match summary to the results channel (no-op if no URL).
+ * Primary form is the rendered carnage-screen PNG with a short caption;
+ * if rendering fails for any reason we fall back to the old text table.
+ */
 export async function postMatchResult(
   url: string | undefined,
   report: CarnageReport,
 ): Promise<void> {
   if (!url) return;
-  await postWebhook(url, formatMatchResult(report));
+  let png: Buffer | undefined;
+  try {
+    png = renderCarnagePng(report);
+  } catch (e) {
+    console.warn("[discord] carnage render failed, falling back to text:", (e as Error).message);
+  }
+  if (png) {
+    await postWebhookImage(url, formatMatchCaption(report), png);
+  } else {
+    await postWebhook(url, formatMatchResult(report));
+  }
 }
 
 /**
@@ -271,7 +419,13 @@ const COMMANDS = [
     .setDescription("Show the Halo 3 customs ELO leaderboard"),
   new SlashCommandBuilder()
     .setName("stats")
-    .setDescription("How many tracked matches are recorded"),
+    .setDescription("Per-player ELO, rank, W-L-D and K/D — or the match count if no player given")
+    .addStringOption((o) =>
+      o
+        .setName("player")
+        .setDescription("Gamertag or display name (partial works)")
+        .setRequired(false),
+    ),
 ].map((c) => c.toJSON());
 
 export async function startBot(
@@ -299,7 +453,12 @@ export async function startBot(
       if (ix.commandName === "leaderboard") {
         await ix.reply(formatLeaderboard(await matchesChrono(db), elo));
       } else if (ix.commandName === "stats") {
-        await ix.reply(`📊 ${await matchCount(db)} tracked Halo 3 custom matches recorded.`);
+        const query = ix.options.getString("player");
+        if (query) {
+          await ix.reply(formatPlayerStats(await matchesChrono(db), elo, query));
+        } else {
+          await ix.reply(`📊 ${await matchCount(db)} tracked Halo 3 custom matches recorded.`);
+        }
       }
     } catch (e) {
       console.error("[discord] command error:", e);

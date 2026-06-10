@@ -12,6 +12,7 @@
     "board": "tsx src/board.ts",
     "announce": "tsx src/announce.ts",
     "clear": "tsx src/clear.ts",
+    "testpost": "tsx src/testPost.ts",
     "setup": "tsx src/setup.ts",
     "bundle": "node scripts/bundle.mjs",
     "rebuild": "node scripts/rebuild-entries.mjs",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
+    "@napi-rs/canvas": "^1.0.0",
     "chokidar": "^4.0.3",
     "discord.js": "^14.26.4",
     "dotenv": "^17.4.2",

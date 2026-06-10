@@ -4,3 +4,5 @@ node_modules/
 data/
 dist/
 h3-tracker-windows.zip
+preview-*.png
+carnage.png

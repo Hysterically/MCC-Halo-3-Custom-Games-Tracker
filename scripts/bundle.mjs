@@ -43,11 +43,19 @@ const EXTERNALS = [
   "@libsql/win32-x64-msvc",
   "bufferutil",
   "utf-8-validate",
+  "@napi-rs/canvas",
+  "@napi-rs/canvas-win32-x64-msvc",
 ];
 // Package dirs (under node_modules) copied wholesale so the native loader can
 // resolve the .node at runtime. libsql carries its own nested detect-libc, so
 // it doesn't need a top-level copy.
-const NATIVE_PKGS = ["libsql", "@neon-rs/load", "@libsql/win32-x64-msvc"];
+const NATIVE_PKGS = [
+  "libsql",
+  "@neon-rs/load",
+  "@libsql/win32-x64-msvc",
+  "@napi-rs/canvas",
+  "@napi-rs/canvas-win32-x64-msvc",
+];
 
 async function exists(path) {
   try {
