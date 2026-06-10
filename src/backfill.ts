@@ -12,6 +12,7 @@ import { join, extname } from "node:path";
 import { config } from "./config.ts";
 import { openDb, recordMatch, matchCount, matchesChrono } from "./db.ts";
 import { parseCarnageFile } from "./parseCarnage.ts";
+import { findMapInfo } from "./mapInfo.ts";
 import { formatLeaderboard } from "./discord.ts";
 
 const dir = process.argv[2] ?? config.carnageDir;
@@ -25,7 +26,12 @@ let added = 0;
 for (const f of files) {
   try {
     const r = await parseCarnageFile(join(dir, f));
-    if (r.tracked && (await recordMatch(db, r))) added++;
+    if (!r.tracked) continue;
+    // No waiting here — old films have usually rotated away; take what's left.
+    const map = await findMapInfo(dir, r.playedAt.getTime());
+    r.mapName = map.mapName;
+    r.mapVariant = map.mapVariant;
+    if (await recordMatch(db, r)) added++;
   } catch (e) {
     console.warn(`skip ${f}: ${(e as Error).message}`);
   }

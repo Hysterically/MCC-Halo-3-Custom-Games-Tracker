@@ -21,6 +21,7 @@ import chokidar from "chokidar";
 import { config } from "./config.ts";
 import { openDb, recordMatch, matchCount } from "./db.ts";
 import { parseCarnageFile, type CarnageReport } from "./parseCarnage.ts";
+import { findMapInfo } from "./mapInfo.ts";
 import { postMatchResult, upsertLeaderboard, startBot } from "./discord.ts";
 
 const elo = { start: config.eloStart, k: config.eloK };
@@ -40,6 +41,15 @@ async function ingest(path: string): Promise<CarnageReport | null> {
     return null;
   }
   if (!report.tracked) return null;
+  // Best-effort map lookup: the theater film lands a few seconds after the
+  // XML, so poll for it briefly before recording.
+  try {
+    const map = await findMapInfo(config.carnageDir, report.playedAt.getTime(), 45_000);
+    report.mapName = map.mapName;
+    report.mapVariant = map.mapVariant;
+  } catch {
+    // no map info — the post and the DB row just omit it
+  }
   try {
     if (!(await recordMatch(db, report))) return null; // dupe — already recorded (here or another instance)
   } catch (e) {
@@ -52,7 +62,9 @@ async function ingest(path: string): Promise<CarnageReport | null> {
 }
 
 const label = (r: CarnageReport): string =>
-  `${r.gameTypeName} · ${r.players.length}p · winner: ${r.winners.join(", ") || "—"}`;
+  `${r.gameTypeName}${r.mapName ? ` on ${r.mapName}` : ""} · ${r.players.length}p · winner: ${
+    r.winners.join(", ") || "—"
+  }`;
 
 // --- startup -------------------------------------------------------------
 // No auto-backfill: historic reports already in the folder are ignored.

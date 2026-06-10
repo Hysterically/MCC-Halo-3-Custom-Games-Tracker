@@ -41,6 +41,10 @@ export interface CarnageReport {
   gameTypeName: string; // e.g. "TEAM SLAYER BR"
   hopperName: string; // empty for customs
   playedAt: Date; // file mtime (no timestamp in the XML)
+  /** Base map (e.g. "Construct") — not in the XML; attached from mapInfo.ts. */
+  mapName?: string;
+  /** Map variant name (e.g. "MLG CStruct TS8") — attached from mapInfo.ts. */
+  mapVariant?: string;
   players: CarnagePlayer[];
   /** Winning team id, or null for FFA / undecided. */
   winningTeamId: number | null;
