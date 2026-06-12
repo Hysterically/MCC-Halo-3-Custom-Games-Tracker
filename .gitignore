@@ -7,3 +7,5 @@ data/
 preview-*.png
 carnage.png
 /friends.env
+/backups/
+/tmp-release.json
