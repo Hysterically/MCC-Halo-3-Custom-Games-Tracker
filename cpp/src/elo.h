@@ -5,6 +5,7 @@
 // other (1 / 0.5 / 0 by finishing rank), per-opponent deltas averaged and
 // applied to every member. Mirrors src/elo.ts.
 #pragma once
+#include <map>
 #include <string>
 #include <vector>
 
@@ -29,3 +30,10 @@ struct EloOptions {
 
 // Ratings sorted by rating descending (stable: ties keep first-seen order).
 std::vector<Rating> computeRatings(const std::vector<StoredMatch>& matches, EloOptions opt);
+
+// Per-player rating change (xuid -> delta) produced by one specific match,
+// computed against the same per-category history the leaderboard uses. Empty
+// for off-format matches or if the match isn't in `matches`. Mirrors
+// matchEloDeltas in src/elo.ts.
+std::map<std::string, double> matchEloDeltas(const std::vector<StoredMatch>& matches,
+                                             const std::string& matchId, EloOptions opt);

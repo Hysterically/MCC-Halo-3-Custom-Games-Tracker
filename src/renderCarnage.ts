@@ -36,6 +36,11 @@ const ROW_H = 46;
 const ROW_GAP = 3;
 const BOTTOM_PAD = 22;
 
+// "ELO CHANGE" footer under the scoreboard (only drawn when deltas are given).
+const FOOTER_COLS = 4;
+const FOOTER_HEADER_OFFSET = 42; // rows bottom -> footer header baseline
+const FOOTER_LINE_H = 30; // per line of player entries
+
 /**
  * Column geometry. Each stat column draws its header left-aligned at `x` and
  * its value right-aligned at `right`. The players column owns everything left
@@ -86,9 +91,13 @@ function orderedPlayers(r: CarnageReport): CarnagePlayer[] {
 
 // --- renderer ----------------------------------------------------------------
 
-export function renderCarnagePng(r: CarnageReport): Buffer {
+export function renderCarnagePng(r: CarnageReport, eloDeltas?: Map<string, number>): Buffer {
   const players = orderedPlayers(r);
-  const height = ROWS_TOP + players.length * (ROW_H + ROW_GAP) - ROW_GAP + BOTTOM_PAD;
+  const changes = eloDeltas ? players.filter((p) => eloDeltas.has(p.xuid)) : [];
+  const footerLines = Math.ceil(changes.length / FOOTER_COLS);
+  const rowsBottom = ROWS_TOP + players.length * (ROW_H + ROW_GAP) - ROW_GAP;
+  const footerH = footerLines ? FOOTER_HEADER_OFFSET + footerLines * FOOTER_LINE_H : 0;
+  const height = rowsBottom + footerH + BOTTOM_PAD;
   const canvas = createCanvas(W, height);
   const ctx = canvas.getContext("2d");
 
@@ -124,7 +133,36 @@ export function renderCarnagePng(r: CarnageReport): Buffer {
     drawRow(ctx, p, y, rowColor(p.teamId, r.teamsEnabled));
   }
 
+  if (footerLines) drawEloFooter(ctx, changes, eloDeltas!, rowsBottom);
+
   return canvas.toBuffer("image/png");
+}
+
+/** Per-player ELO change under the scoreboard, in scoreboard order. */
+function drawEloFooter(
+  ctx: SKRSContext2D,
+  changes: CarnagePlayer[],
+  deltas: Map<string, number>,
+  rowsBottom: number,
+): void {
+  ctx.font = `20px ${FONT}`;
+  ctx.fillStyle = "#76b5d8";
+  ctx.fillText("ELO CHANGE", MARGIN + 2, rowsBottom + FOOTER_HEADER_OFFSET);
+
+  const colW = (W - 2 * MARGIN) / FOOTER_COLS;
+  ctx.font = `22px ${FONT}`;
+  for (let i = 0; i < changes.length; i++) {
+    const p = changes[i];
+    const d = Math.round(deltas.get(p.xuid)!);
+    const x = MARGIN + 2 + (i % FOOTER_COLS) * colW;
+    const y =
+      rowsBottom + FOOTER_HEADER_OFFSET + FOOTER_LINE_H * (Math.floor(i / FOOTER_COLS) + 1);
+    const name = displayName(p.gamertag);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(name, x, y);
+    ctx.fillStyle = d > 0 ? "#7ed87e" : d < 0 ? "#e8837f" : "#c8cfd8";
+    ctx.fillText(d >= 0 ? `+${d}` : String(d), x + ctx.measureText(name).width + 10, y);
+  }
 }
 
 function drawRow(ctx: SKRSContext2D, p: CarnagePlayer, y: number, color: string): void {

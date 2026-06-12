@@ -5,6 +5,8 @@
 #include <limits>
 #include <unordered_map>
 
+#include "category.h"
+
 namespace {
 
 double expected(double a, double b) { return 1.0 / (1.0 + std::pow(10.0, (b - a) / 400.0)); }
@@ -134,4 +136,40 @@ std::vector<Rating> computeRatings(const std::vector<StoredMatch>& matches, EloO
     std::stable_sort(table.begin(), table.end(),
                      [](const Rating& a, const Rating& b) { return a.rating > b.rating; });
     return table;
+}
+
+std::map<std::string, double> matchEloDeltas(const std::vector<StoredMatch>& matches,
+                                             const std::string& matchId, EloOptions opt) {
+    std::map<std::string, double> deltas;
+
+    size_t idx = matches.size();
+    for (size_t i = 0; i < matches.size(); ++i) {
+        if (matches[i].matchId == matchId) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx == matches.size()) return deltas;
+    const StoredMatch& match = matches[idx];
+    Category cat = categorize(match);
+    if (cat == Category::Other) return deltas;
+
+    // Replay the match's category up to and including it, and diff against the
+    // replay that stops just before it.
+    std::vector<StoredMatch> hist;
+    for (size_t i = 0; i <= idx; ++i)
+        if (categorize(matches[i]) == cat) hist.push_back(matches[i]);
+    std::vector<StoredMatch> prior(hist.begin(), hist.end() - 1);
+
+    std::unordered_map<std::string, double> before, after;
+    for (const Rating& r : computeRatings(prior, opt)) before[r.xuid] = r.rating;
+    for (const Rating& r : computeRatings(hist, opt)) after[r.xuid] = r.rating;
+
+    for (const auto& p : match.players) {
+        auto a = after.find(p.xuid);
+        if (a == after.end()) continue;
+        auto b = before.find(p.xuid);
+        deltas[p.xuid] = a->second - (b != before.end() ? b->second : opt.start);
+    }
+    return deltas;
 }

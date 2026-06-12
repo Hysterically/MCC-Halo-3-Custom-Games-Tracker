@@ -196,8 +196,25 @@ export function formatMatchCaption(r: CarnageReport): string {
   return `${map ? `🗺️ **${map}**\n` : ""}${tag}`;
 }
 
+/**
+ * One line of per-player ELO changes appended under the scoreboard table,
+ * biggest gain first. Empty string when there are no deltas (off-format match,
+ * or the computation failed upstream).
+ */
+function formatEloLine(r: CarnageReport, deltas?: Map<string, number>): string {
+  if (!deltas?.size) return "";
+  const rated = r.players.filter((p) => deltas.has(p.xuid));
+  if (!rated.length) return "";
+  const sorted = [...rated].sort((a, b) => deltas.get(b.xuid)! - deltas.get(a.xuid)!);
+  const parts = sorted.map((p) => {
+    const d = Math.round(deltas.get(p.xuid)!);
+    return `${displayName(p.gamertag)} ${d >= 0 ? "+" : ""}${d}`;
+  });
+  return `\n📈 **Elo:** ${parts.join(" · ")}`;
+}
+
 /** Detailed per-match summary: gametype, teams or FFA, K/D/A, winner. */
-export function formatMatchResult(r: CarnageReport): string {
+export function formatMatchResult(r: CarnageReport, eloDeltas?: Map<string, number>): string {
   const cat = categorize(r);
   const tag =
     cat === "other"
@@ -227,7 +244,7 @@ export function formatMatchResult(r: CarnageReport): string {
         p.deaths,
       ).padStart(6)} ${String(p.assists).padStart(7)} ${kd(p).padStart(6)}`;
     });
-    return [header, "```", head, ...lines, "```"].join("\n");
+    return [header, "```", head, ...lines, "```"].join("\n") + formatEloLine(r, eloDeltas);
   }
 
   // Team game — group, winning team first, players in each team by score desc.
@@ -262,7 +279,7 @@ export function formatMatchResult(r: CarnageReport): string {
     }
     blocks.push("");
   }
-  return [header, "```", ...blocks, "```"].join("\n").trimEnd();
+  return [header, "```", ...blocks, "```"].join("\n").trimEnd() + formatEloLine(r, eloDeltas);
 }
 
 const TEAM_NAMES = ["Red", "Blue", "Green", "Orange", "Purple", "Gold", "Brown", "Pink"];
@@ -353,18 +370,19 @@ function webhookId(url: string): string {
 export async function postMatchResult(
   url: string | undefined,
   report: CarnageReport,
+  eloDeltas?: Map<string, number>,
 ): Promise<void> {
   if (!url) return;
   let png: Buffer | undefined;
   try {
-    png = renderCarnagePng(report);
+    png = renderCarnagePng(report, eloDeltas);
   } catch (e) {
     console.warn("[discord] carnage render failed, falling back to text:", (e as Error).message);
   }
   if (png) {
     await postWebhookImage(url, formatMatchCaption(report), png);
   } else {
-    await postWebhook(url, formatMatchResult(report));
+    await postWebhook(url, formatMatchResult(report, eloDeltas));
   }
 }
 

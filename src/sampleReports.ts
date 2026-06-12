@@ -16,7 +16,9 @@ const p = (
   standing: number,
 ): CarnagePlayer => ({
   gamertag,
-  xuid: `0x${gamertag.length}`,
+  // Unique per player (the ELO-change footer is keyed by XUID); same scheme
+  // as the C++ sampleReport().
+  xuid: `0x${gamertag}`,
   teamId,
   score,
   standing,
@@ -59,6 +61,17 @@ export const sampleTeam: CarnageReport = {
     p("Hysterically", 1, 31, 20, 18, 30, 1),
   ],
 };
+
+/** Plausible per-player ELO changes so previews show the scoreboard footer. */
+export function sampleEloDeltas(r: CarnageReport): Map<string, number> {
+  const ffaByStanding = [24, 8, -10, -22];
+  return new Map(
+    r.players.map((p) => [
+      p.xuid,
+      r.teamsEnabled ? (p.teamId === r.winningTeamId ? 16 : -16) : ffaByStanding[p.standing] ?? -22,
+    ]),
+  );
+}
 
 export const sampleFfa: CarnageReport = {
   ...base,

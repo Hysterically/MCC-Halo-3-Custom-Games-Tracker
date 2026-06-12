@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <thread>
 #include <unordered_map>
 
@@ -378,6 +379,17 @@ CarnageReport sampleReport() {
     return r;
 }
 
+namespace {
+// Plausible per-player ELO changes so the sample render/post show the
+// scoreboard footer (mirrors sampleEloDeltas in src/sampleReports.ts).
+std::map<std::string, double> sampleEloDeltas(const CarnageReport& r) {
+    std::map<std::string, double> d;
+    for (const auto& p : r.players)
+        d[p.xuid] = p.teamId == r.winningTeamId.value_or(-1) ? 16 : -16;
+    return d;
+}
+}  // namespace
+
 int cmdRender(const std::vector<std::string>& args) {
     if (args.empty()) {
         std::cerr << "usage: h3-tracker render <carnage.xml|--sample> [out.png]\n";
@@ -393,7 +405,9 @@ int cmdRender(const std::vector<std::string>& args) {
         r.mapVariant = map.mapVariant;
     }
     std::string out = args.size() > 1 ? args[1] : "carnage.png";
-    std::vector<unsigned char> png = renderCarnagePng(r);
+    std::map<std::string, double> deltas;
+    if (args[0] == "--sample") deltas = sampleEloDeltas(r);
+    std::vector<unsigned char> png = renderCarnagePng(r, deltas.empty() ? nullptr : &deltas);
     if (!util::writeFile(out, std::string(png.begin(), png.end()))) {
         std::cerr << "could not write " << out << "\n";
         return 1;
@@ -407,7 +421,9 @@ int cmdPostSample() {
         std::cerr << "No DISCORD_RESULTS_WEBHOOK_URL in .env \xE2\x80\x94 nothing to post to.\n";
         return 1;
     }
-    postMatchResult(config().discordResultsWebhookUrl, sampleReport());
+    CarnageReport sample = sampleReport();
+    std::map<std::string, double> deltas = sampleEloDeltas(sample);
+    postMatchResult(config().discordResultsWebhookUrl, sample, &deltas);
     std::cout << "Posted a sample carnage image to the results webhook.\n"
                  "(It is a fake match \xE2\x80\x94 delete the Discord message when done looking.)\n";
     return 0;
@@ -518,8 +534,19 @@ int cmdWatch() {
         if (!report) return;
         std::cout << "[match] " << matchLabel(*report) << "\n";
 
+        // Per-player ELO change for the result post — replayed from the
+        // recorded history, so it matches exactly what the leaderboard will
+        // apply. Best effort: a DB hiccup just posts without the deltas.
+        std::map<std::string, double> eloDeltas;
         try {
-            postMatchResult(config().discordResultsWebhookUrl, *report);
+            eloDeltas = matchEloDeltas(db->matchesChrono(), report->matchId, eloOpt());
+        } catch (const std::exception& e) {
+            std::cerr << "[elo] delta computation failed: " << e.what() << "\n";
+        }
+
+        try {
+            postMatchResult(config().discordResultsWebhookUrl, *report,
+                            eloDeltas.empty() ? nullptr : &eloDeltas);
         } catch (const std::exception& e) {
             std::cerr << "[discord] result post failed: " << e.what() << "\n";
         }

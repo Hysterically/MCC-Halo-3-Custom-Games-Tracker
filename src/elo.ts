@@ -12,6 +12,7 @@
  */
 
 import type { StoredMatch } from "./db.ts";
+import { categorize } from "./category.ts";
 
 export interface Rating {
   xuid: string;
@@ -122,4 +123,37 @@ export function computeRatings(matches: StoredMatch[], opt: EloOptions): Rating[
 
 function name(m: StoredMatch, xuid: string): string {
   return m.players.find((p) => p.xuid === xuid)?.gamertag ?? xuid;
+}
+
+/**
+ * Per-player rating change (xuid -> delta) produced by one specific match,
+ * computed against the same per-category history the leaderboard uses: replay
+ * the match's category up to and including it, and diff against the replay
+ * that stops just before it. Returns null for off-format matches (they don't
+ * touch any board) or if the match isn't in `matches`.
+ */
+export function matchEloDeltas(
+  matches: StoredMatch[],
+  matchId: string,
+  opt: EloOptions,
+): Map<string, number> | null {
+  const idx = matches.findIndex((m) => m.matchId === matchId);
+  if (idx === -1) return null;
+  const match = matches[idx];
+  const cat = categorize(match);
+  if (cat === "other") return null;
+
+  const hist = matches.slice(0, idx + 1).filter((m) => categorize(m) === cat);
+  const before = new Map(
+    computeRatings(hist.slice(0, -1), opt).map((r) => [r.xuid, r.rating]),
+  );
+  const after = new Map(computeRatings(hist, opt).map((r) => [r.xuid, r.rating]));
+
+  const deltas = new Map<string, number>();
+  for (const p of match.players) {
+    const a = after.get(p.xuid);
+    if (a === undefined) continue;
+    deltas.set(p.xuid, a - (before.get(p.xuid) ?? opt.start));
+  }
+  return deltas;
 }

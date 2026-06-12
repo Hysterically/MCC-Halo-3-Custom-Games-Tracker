@@ -74,17 +74,18 @@ void postWebhook(const std::string& url, const std::string& content) {
 
 // Primary form is the rendered carnage-screen PNG with a short caption; if
 // rendering fails for any reason we fall back to the old text table.
-void postMatchResult(const std::optional<std::string>& url, const CarnageReport& report) {
+void postMatchResult(const std::optional<std::string>& url, const CarnageReport& report,
+                     const std::map<std::string, double>* eloDeltas) {
     if (!url) return;
 
     std::vector<unsigned char> png;
     try {
-        png = renderCarnagePng(report);
+        png = renderCarnagePng(report, eloDeltas);
     } catch (const std::exception& e) {
         std::cerr << "[discord] carnage render failed, falling back to text: " << e.what() << "\n";
     }
     if (png.empty()) {
-        postWebhook(*url, formatMatchResult(report));
+        postWebhook(*url, formatMatchResult(report, eloDeltas));
         return;
     }
 
