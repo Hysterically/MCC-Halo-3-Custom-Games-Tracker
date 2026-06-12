@@ -60,9 +60,9 @@ Discord delivery are built and smoke-tested end to end.
 
 ## Run it — for end users (no Node install required)
 
-The recommended distribution path: `npm run bundle` produces
-`h3-tracker-windows.zip` (~30 MB). Ship that to whoever's hosting.
-Their flow:
+The distribution build is the native C++ port (see [cpp/README.md](cpp/README.md)):
+`cpp\bundle.bat` produces `cpp\dist\h3-tracker-windows.zip` (~4 MB, a single
+self-contained exe). Ship that to whoever's hosting. Their flow:
 
 1. Extract the zip.
 2. Double-click **Start.bat**.
@@ -90,7 +90,6 @@ npm run watch              # live watcher
 | `npm run announce` | force-refresh the live leaderboard message |
 | `npm run backfill -- "<folder>"` | one-shot ingest a folder of old reports |
 | `npm run board` | print current standings to the console |
-| `npm run bundle` | build the Windows distribution zip |
 | `npm run inspect` | dump an XML's structure (schema discovery) |
 | `npm run parse` | classify reports (which are tracked H3 customs) |
 | `npm run typecheck` | `tsc --noEmit` |
