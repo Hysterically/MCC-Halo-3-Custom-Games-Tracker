@@ -63,12 +63,6 @@ bot token to .env to answer slash commands on demand:
   DISCORD_GUILD_ID=your-server-id     (optional; makes commands appear instantly)
 Only one PC should run the bot - don't add the token on every machine.
 
-Player name aliases
--------------------
-Open aliases.json in Notepad to change how a gamertag is shown, e.g.:
-  { "HystericaIly": "Hysterically" }
-Matching is case-insensitive and only changes the display, not the saved history.
-
 Where matches come from
 -----------------------
 The tracker reads Halo MCC's carnage reports from:
