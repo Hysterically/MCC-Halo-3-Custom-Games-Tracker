@@ -1,8 +1,10 @@
 # CMake / Ninja build tree (includes vcpkg_installed and all test artifacts)
 build/
 
-# Assembled distribution + release zip
-dist/
+# Assembled distribution tree (the release zip IS committed — it's the
+# download link in the root README)
+dist/*
+!dist/h3-tracker-windows.zip
 
 # Local runtime files (if the exe is ever run from here)
 .env

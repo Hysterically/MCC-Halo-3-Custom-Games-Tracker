@@ -1,79 +1,124 @@
-# h3-customs-tracker
+# Halo 3 Customs Tracker
 
-Tracks Halo 3 (MCC) custom games for a friends group and posts an ELO
-leaderboard to Discord.
+Plays Halo 3 custom games with your friends in MCC? This little program watches
+your games and posts the results to your Discord server automatically:
 
-## Architecture (final)
+- **After every match** — a picture of the post-game carnage screen (scores,
+  kills, deaths) in your results channel.
+- **A live leaderboard** — one always-up-to-date standings post with separate
+  **2v2 / 4v4 / FFA** rankings, updated after every game.
+- **Optional**: type `/leaderboard` or `/stats` in Discord to see standings on
+  demand.
 
-MCC writes a full `mpcarnagereport*.xml` to disk after **every** match
-(including customs) — every player's Gamertag, XUID, team, score, kills,
-deaths, medals. So:
+It works by reading the match report files MCC saves on your PC after each game.
+No logins, no passwords, nothing to sign up for — it never touches your
+Microsoft or Xbox account.
+
+## How to use it (no technical skills needed)
+
+1. **[⬇ Download the tracker (zip)](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/raw/main/cpp/dist/h3-tracker-windows.zip)**
+2. Right-click the zip → **Extract All** → put the folder anywhere you like.
+3. Double-click **`Start.bat`**.
+4. The first time, it asks for two Discord "webhook" URLs — one for match
+   results, one for the leaderboard — **and walks you through creating them**
+   (it's about four clicks in Discord). You can type `skip` and add them later.
+5. That's it. Leave the window open while you play customs; results appear in
+   Discord on their own.
+
+To change your Discord settings later, double-click **`Setup.bat`**.
+
+**Requirements:** Windows 10/11 and Halo: MCC. Nothing to install — the zip is
+a single small program (~1 MB).
+
+**Important:** the tracker only sees games that *your* PC played in. One person
+in the lobby running it is enough (the match report lists everyone), so the
+usual setup is: whoever hosts the customs runs the tracker.
+
+## Common questions
+
+**Does everyone need to run it?**
+No — one PC in the lobby is enough. If different people host on different
+nights, see "one leaderboard across several PCs" below.
+
+**A player's name looks wrong on the leaderboard.**
+Open `aliases.json` (in the tracker folder) with Notepad and add a line like
+`"TheirGamertag": "Display Name"`. It only changes how the name is shown.
+
+**Where does my data go?**
+Match history is saved in a small file on your PC (`data\h3.db`). Nothing is
+uploaded anywhere except the posts to your own Discord server.
+
+**Can two or more hosts share one leaderboard?**
+Yes. Create a free database at [turso.tech](https://turso.tech), then put its
+URL and token into each host's `.env` file (in the tracker folder):
 
 ```
-Gaming PC (host):
-  MCC writes mpcarnagereport*.xml  ->  watcher parses it
-                                        |
-                                        v
-                            dedupe -> per-category ELO
-                                        |
-                          +-------------+-------------+
-                          v                           v
-                #game-results post        #leaderboard (edited in place,
-                (per-match summary)        2v2 / 4v4 / FFA sections)
+DB_URL=libsql://your-database.turso.io
+DB_AUTH_TOKEN=your-token
 ```
 
-**No Microsoft auth. No Spartan token. No web API. No third party.** Just read
-local files. The watcher must run on a PC that played the match (the host's
-machine is enough — the XML lists *all* players).
+Every PC pointed at the same database feeds one combined leaderboard, and each
+match is only posted once no matter how many of you were in the game.
 
-> The earlier Spartan-token/auth approach was removed — this is strictly
-> simpler and more robust.
+**How do I get the `/leaderboard` and `/stats` commands?**
+Add a Discord bot token to `.env`:
 
-## Status
+```
+DISCORD_BOT_TOKEN=your-bot-token
+DISCORD_GUILD_ID=your-server-id    (optional — makes the commands show up instantly)
+```
 
-Pipeline complete: **parse → dedupe → SQLite → ELO → Discord**. Schema is
-locked against a real Halo 3 report; the watcher, store, rating engine, and
-Discord delivery are built and smoke-tested end to end.
+**MCC saves its files somewhere unusual on my PC.**
+The tracker reads `%USERPROFILE%\AppData\LocalLow\MCC\Temporary`. If yours
+differs, set `MCC_CARNAGE_DIR` in `.env`.
+
+---
+
+## For developers
+
+Everything below this line is only relevant if you want to work on the tracker
+itself.
+
+### How it works
+
+MCC writes a full `mpcarnagereport*.xml` after **every** match (including
+customs): every player's Gamertag, XUID, team, score, kills, deaths, medals.
+
+```
+MCC writes mpcarnagereport*.xml  ->  watcher parses it
+                                      |
+                                      v
+                          dedupe -> per-category ELO
+                                      |
+                        +-------------+-------------+
+                        v                           v
+              #game-results post        #leaderboard (edited in place,
+              (carnage-screen PNG)       2v2 / 4v4 / FFA sections)
+```
 
 - **ELO:** classic, team-average, zero-sum, recomputed from the full match
   history every time (deterministic, retunable, no drift). Ratings are
-  **per category** — a player's 2v2, 4v4, and FFA ELO are independent, each
-  computed only from that category's matches.
-- **Storage:** libSQL / SQLite. Defaults to a local file (`./data/h3.db`);
-  point `DB_URL` at a shared remote libSQL/Turso DB to run several PCs at once
-  (see [Running on more than one PC](#running-on-more-than-one-pc)). Players
-  keyed by XUID so Gamertag changes don't split history.
-- **Discord** splits into two channels:
-  - **#game-results** — a rendered carnage-screen image (styled after Halo 3's
-    post-game screen: team-coloured rows with Score / Kills / Assists / Deaths)
-    posted after every new match, with map + leaderboard-category caption.
-    Falls back to a text summary if rendering fails.
-  - **#leaderboard** — a single always-current message, edited in place,
-    with separate **2v2 / 4v4 / FFA** standings sections.
-  - An optional bot answers `/leaderboard` and `/stats` on demand.
-    `/stats <player>` shows that player's ELO, rank, W-L-D, Win% and K/D in
-    each category (2v2 / 4v4 / FFA) plus an overall line; `/stats` with no
-    player just reports how many matches are recorded.
-- **Display aliases:** `aliases.json` maps a Gamertag to a preferred display
-  name (e.g. `HystericaIly` → `Hysterically`) without rewriting any history —
-  matches stay keyed by XUID, only the rendered label changes.
+  per-category — 2v2, 4v4, and FFA ELO are independent.
+- **Storage:** libSQL / SQLite. Local file by default; point `DB_URL` at a
+  shared Turso DB to run several PCs at once. A match is claimed inside a write
+  transaction (`INSERT … ON CONFLICT(match_id) DO NOTHING`), so exactly one
+  instance posts it even if several finish the same game simultaneously. The
+  leaderboard message id lives in the shared DB, so all instances edit the same
+  Discord message. Players are keyed by XUID so Gamertag changes don't split
+  history.
 
-## Run it — for end users (no Node install required)
+### Two implementations
 
-The distribution build is the native C++ port (see [cpp/README.md](cpp/README.md)):
-`cpp\bundle.bat` produces `cpp\dist\h3-tracker-windows.zip` (~4 MB, a single
-self-contained exe). Ship that to whoever's hosting. Their flow:
+| | Role |
+|---|---|
+| `src/` (TypeScript) | reference implementation; what the maintainer runs from source |
+| `cpp/` (C++20) | **the distributed build** — single self-contained `h3-tracker.exe` |
 
-1. Extract the zip.
-2. Double-click **Start.bat**.
-3. First time only: paste two Discord webhook URLs the wizard asks for.
-4. Leave the window open while playing.
+The C++ port is parity-verified against the TS app (identical `board` output,
+wire-compatible shared-DB dedupe — see [cpp/README.md](cpp/README.md)).
+**New features must be implemented in both.**
 
-That's it — no terminal, no Node.js install, no `.env` editing.
-
-Reconfiguring later: double-click **Setup.bat** to re-enter the URLs.
-
-## Run it — from source (developers)
+### TypeScript: run from source
 
 ```powershell
 npm install
@@ -81,12 +126,10 @@ copy .env.example .env     # optional — fill in Discord bits if you want them
 npm run watch              # live watcher
 ```
 
-### Scripts
-
 | command | what it does |
 |---|---|
 | `npm run watch` | live watcher: parse → dedupe → store → ELO → Discord |
-| `npm run setup` | interactive `.env` wizard (also runs as first-launch from Start.bat) |
+| `npm run setup` | interactive `.env` wizard |
 | `npm run announce` | force-refresh the live leaderboard message |
 | `npm run backfill -- "<folder>"` | one-shot ingest a folder of old reports |
 | `npm run board` | print current standings to the console |
@@ -97,36 +140,15 @@ npm run watch              # live watcher
 See `.env.example` for all options (MCC folder, DB path/URL, ELO K/start,
 Discord webhook URLs, bot token, guild ID).
 
-## Running on more than one PC
+### C++: build the distribution zip
 
-By default each install has its own local SQLite DB, so the design assumes a
-single "tracker PC" — if two people ran it with separate local DBs during the
-same game, each would post the same match independently and maintain its own
-diverging leaderboard.
+Requires Visual Studio 2022 (Desktop C++ workload). See
+[cpp/README.md](cpp/README.md) for details.
 
-To run the tracker on two or more PCs at once (e.g. for failover, or because
-different people host on different nights), point every PC at **one shared
-remote DB** via `DB_URL` (+ `DB_AUTH_TOKEN`). The shared DB then acts as a
-**cross-instance guard**:
+```bat
+cpp\build.bat      :: configure + compile -> cpp\build\bin\h3-tracker.exe
+cpp\bundle.bat     :: assemble cpp\dist\h3-tracker-windows.zip
+```
 
-- **No duplicate posts.** A match is recorded inside a write transaction with
-  `INSERT … ON CONFLICT(match_id) DO NOTHING`. Whichever instance's insert
-  actually creates the row owns that match and posts it to Discord; every other
-  instance that later sees the same `GameUniqueId` gets "already recorded" and
-  stays silent. The claim is atomic, so it holds even if two PCs finish the
-  same match at the same instant.
-- **One shared leaderboard.** The leaderboard message id lives in the shared DB
-  and is edited in place, so all instances update the same message instead of
-  each posting their own. ELO is computed from the single canonical history, so
-  the board is correct no matter which PC posts it.
-
-Setup: create a free DB at [turso.tech](https://turso.tech), then set
-`DB_URL=libsql://…` and `DB_AUTH_TOKEN=…` in each PC's `.env`. A solo user
-needs none of this — leaving `DB_URL` unset uses the local file as before.
-
-### Migrating an existing local DB
-
-The store switched from `better-sqlite3` to libSQL (same on-disk SQLite
-format, so existing `data/h3.db` files are read as-is). When upgrading a
-running install, **stop the old watcher before starting the new one** so its
-write-ahead log is flushed into `h3.db` on a clean shutdown.
+The zip is committed to the repo so end users can download it straight from
+GitHub — **rebuild and re-commit it whenever tracker behaviour changes.**

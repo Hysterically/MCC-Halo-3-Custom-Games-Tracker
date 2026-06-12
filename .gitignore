@@ -2,7 +2,7 @@ node_modules/
 .env
 *.log
 data/
-dist/
-h3-tracker-windows.zip
+/dist/
+/h3-tracker-windows.zip
 preview-*.png
 carnage.png
