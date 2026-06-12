@@ -17,7 +17,7 @@ Microsoft or Xbox account.
 
 ## How to use it (no technical skills needed)
 
-1. **[⬇ Download the tracker (zip)](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/raw/main/cpp/dist/h3-tracker-windows.zip)**
+1. **[⬇ Download the tracker (zip)](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/releases/latest/download/h3-tracker-windows.zip)**
 2. Right-click the zip → **Extract All** → put the folder anywhere you like.
 3. **Ask Hysterically for the group settings file (`.env`)** and drop it into
    that folder. This is what connects you to *our* shared leaderboard and
@@ -149,5 +149,6 @@ cpp\build.bat      :: configure + compile -> cpp\build\bin\h3-tracker.exe
 cpp\bundle.bat     :: assemble cpp\dist\h3-tracker-windows.zip
 ```
 
-The zip is committed to the repo so end users can download it straight from
-GitHub — **rebuild and re-commit it whenever tracker behaviour changes.**
+The zip is distributed via [GitHub Releases](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/releases)
+(the README's download link always points at the latest release) — **rebuild
+the zip and publish a new release whenever tracker behaviour changes.**
