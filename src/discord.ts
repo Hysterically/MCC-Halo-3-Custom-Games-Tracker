@@ -23,7 +23,7 @@ import {
 } from "discord.js";
 import type { DB, StoredMatch } from "./db.ts";
 import { matchCount, matchesChrono, kvGet, kvClaim, kvCas } from "./db.ts";
-import { computeRatings, type EloOptions, type Rating } from "./elo.ts";
+import { computeRatings, type EloChange, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import { categorize, CATEGORY_LABEL, BOARD_CATEGORIES, type Category } from "./category.ts";
 import { displayName } from "./aliases.ts";
@@ -197,24 +197,27 @@ export function formatMatchCaption(r: CarnageReport): string {
 }
 
 /**
- * One line of per-player ELO changes appended under the scoreboard table,
- * biggest gain first. Empty string when there are no deltas (off-format match,
- * or the computation failed upstream).
+ * One line of per-player ELO ratings + changes appended under the scoreboard
+ * table, biggest gain first. Empty string when there are no changes
+ * (off-format match, or the computation failed upstream).
  */
-function formatEloLine(r: CarnageReport, deltas?: Map<string, number>): string {
-  if (!deltas?.size) return "";
-  const rated = r.players.filter((p) => deltas.has(p.xuid));
+function formatEloLine(r: CarnageReport, changes?: Map<string, EloChange>): string {
+  if (!changes?.size) return "";
+  const rated = r.players.filter((p) => changes.has(p.xuid));
   if (!rated.length) return "";
-  const sorted = [...rated].sort((a, b) => deltas.get(b.xuid)! - deltas.get(a.xuid)!);
+  const sorted = [...rated].sort(
+    (a, b) => changes.get(b.xuid)!.delta - changes.get(a.xuid)!.delta,
+  );
   const parts = sorted.map((p) => {
-    const d = Math.round(deltas.get(p.xuid)!);
-    return `${displayName(p.gamertag)} ${d >= 0 ? "+" : ""}${d}`;
+    const c = changes.get(p.xuid)!;
+    const d = Math.round(c.delta);
+    return `${displayName(p.gamertag)} ${Math.round(c.rating)} (${d >= 0 ? "+" : ""}${d})`;
   });
   return `\n📈 **Elo:** ${parts.join(" · ")}`;
 }
 
 /** Detailed per-match summary: gametype, teams or FFA, K/D/A, winner. */
-export function formatMatchResult(r: CarnageReport, eloDeltas?: Map<string, number>): string {
+export function formatMatchResult(r: CarnageReport, eloChanges?: Map<string, EloChange>): string {
   const cat = categorize(r);
   const tag =
     cat === "other"
@@ -244,7 +247,7 @@ export function formatMatchResult(r: CarnageReport, eloDeltas?: Map<string, numb
         p.deaths,
       ).padStart(6)} ${String(p.assists).padStart(7)} ${kd(p).padStart(6)}`;
     });
-    return [header, "```", head, ...lines, "```"].join("\n") + formatEloLine(r, eloDeltas);
+    return [header, "```", head, ...lines, "```"].join("\n") + formatEloLine(r, eloChanges);
   }
 
   // Team game — group, winning team first, players in each team by score desc.
@@ -279,7 +282,7 @@ export function formatMatchResult(r: CarnageReport, eloDeltas?: Map<string, numb
     }
     blocks.push("");
   }
-  return [header, "```", ...blocks, "```"].join("\n").trimEnd() + formatEloLine(r, eloDeltas);
+  return [header, "```", ...blocks, "```"].join("\n").trimEnd() + formatEloLine(r, eloChanges);
 }
 
 const TEAM_NAMES = ["Red", "Blue", "Green", "Orange", "Purple", "Gold", "Brown", "Pink"];
@@ -370,19 +373,19 @@ function webhookId(url: string): string {
 export async function postMatchResult(
   url: string | undefined,
   report: CarnageReport,
-  eloDeltas?: Map<string, number>,
+  eloChanges?: Map<string, EloChange>,
 ): Promise<void> {
   if (!url) return;
   let png: Buffer | undefined;
   try {
-    png = renderCarnagePng(report, eloDeltas);
+    png = renderCarnagePng(report, eloChanges);
   } catch (e) {
     console.warn("[discord] carnage render failed, falling back to text:", (e as Error).message);
   }
   if (png) {
     await postWebhookImage(url, formatMatchCaption(report), png);
   } else {
-    await postWebhook(url, formatMatchResult(report, eloDeltas));
+    await postWebhook(url, formatMatchResult(report, eloChanges));
   }
 }
 

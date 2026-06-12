@@ -5,6 +5,7 @@
  */
 
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
+import type { EloChange } from "./elo.ts";
 
 const p = (
   gamertag: string,
@@ -16,7 +17,7 @@ const p = (
   standing: number,
 ): CarnagePlayer => ({
   gamertag,
-  // Unique per player (the ELO-change footer is keyed by XUID); same scheme
+  // Unique per player (the ELO-change column is keyed by XUID); same scheme
   // as the C++ sampleReport().
   xuid: `0x${gamertag}`,
   teamId,
@@ -62,14 +63,27 @@ export const sampleTeam: CarnageReport = {
   ],
 };
 
-/** Plausible per-player ELO changes so previews show the scoreboard footer. */
-export function sampleEloDeltas(r: CarnageReport): Map<string, number> {
-  const ffaByStanding = [24, 8, -10, -22];
+/** Plausible post-match ratings + changes so previews show the ELO column. */
+export function sampleEloChanges(r: CarnageReport): Map<string, EloChange> {
+  const ffaByStanding: EloChange[] = [
+    { rating: 1302, delta: 24 },
+    { rating: 1278, delta: 8 },
+    { rating: 1255, delta: -10 },
+    { rating: 1231, delta: -22 },
+  ];
+  const winnerRatings = [1342, 1318, 1296, 1275];
+  const loserRatings = [1289, 1263, 1241, 1210];
+  let w = 0;
+  let l = 0;
   return new Map(
-    r.players.map((p) => [
-      p.xuid,
-      r.teamsEnabled ? (p.teamId === r.winningTeamId ? 16 : -16) : ffaByStanding[p.standing] ?? -22,
-    ]),
+    r.players.map((p) => {
+      if (!r.teamsEnabled) {
+        return [p.xuid, ffaByStanding[p.standing] ?? { rating: 1231, delta: -22 }];
+      }
+      return p.teamId === r.winningTeamId
+        ? [p.xuid, { rating: winnerRatings[w++ % 4], delta: 16 }]
+        : [p.xuid, { rating: loserRatings[l++ % 4], delta: -16 }];
+    }),
   );
 }
 

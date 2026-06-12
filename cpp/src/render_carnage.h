@@ -8,9 +8,10 @@
 #include <vector>
 
 #include "carnage.h"
+#include "elo.h"
 
 // Returns PNG bytes. Throws std::runtime_error if GDI+ rendering fails.
-// `eloDeltas` (xuid -> rating change, nullable) adds an "ELO CHANGE" footer
-// under the scoreboard.
-std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& report,
-                                           const std::map<std::string, double>* eloDeltas = nullptr);
+// `eloChanges` (xuid -> post-match rating + change, nullable) adds a neutral
+// "ELO" column right of Deaths showing e.g. "1318 +16".
+std::vector<std::uint8_t> renderCarnagePng(
+    const CarnageReport& report, const std::map<std::string, EloChange>* eloChanges = nullptr);

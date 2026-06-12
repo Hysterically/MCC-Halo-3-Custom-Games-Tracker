@@ -75,23 +75,24 @@ std::string rstrip(std::string s) {
     return s.substr(0, b + 1);
 }
 
-// One line of per-player ELO changes appended under the scoreboard table,
-// biggest gain first. Empty when there are no deltas. Mirrors formatEloLine in
-// src/discord.ts (byte-identical output).
-std::string formatEloLine(const CarnageReport& r, const std::map<std::string, double>* deltas) {
-    if (!deltas || deltas->empty()) return "";
-    std::vector<std::pair<std::string, double>> entries;  // display name, delta
+// One line of per-player ELO ratings + changes appended under the scoreboard
+// table, biggest gain first. Empty when there are no changes. Mirrors
+// formatEloLine in src/discord.ts (byte-identical output).
+std::string formatEloLine(const CarnageReport& r, const std::map<std::string, EloChange>* changes) {
+    if (!changes || changes->empty()) return "";
+    std::vector<std::pair<std::string, EloChange>> entries;  // display name, change
     for (const auto& p : r.players) {
-        auto it = deltas->find(p.xuid);
-        if (it != deltas->end()) entries.emplace_back(displayName(p.gamertag), it->second);
+        auto it = changes->find(p.xuid);
+        if (it != changes->end()) entries.emplace_back(displayName(p.gamertag), it->second);
     }
     if (entries.empty()) return "";
     std::stable_sort(entries.begin(), entries.end(),
-                     [](const auto& a, const auto& b) { return a.second > b.second; });
+                     [](const auto& a, const auto& b) { return a.second.delta > b.second.delta; });
     std::vector<std::string> parts;
-    for (const auto& [name, delta] : entries) {
-        long d = util::jsRound(delta);
-        parts.push_back(name + " " + (d >= 0 ? "+" : "") + std::to_string(d));
+    for (const auto& [name, c] : entries) {
+        long d = util::jsRound(c.delta);
+        parts.push_back(name + " " + std::to_string(util::jsRound(c.rating)) + " (" +
+                        (d >= 0 ? "+" : "") + std::to_string(d) + ")");
     }
     return "\n\xF0\x9F\x93\x88 **Elo:** " + join(parts, " \xC2\xB7 ");  // 📈, " · "
 }
@@ -126,7 +127,7 @@ std::string formatMatchCaption(const CarnageReport& r) {
 }
 
 std::string formatMatchResult(const CarnageReport& r,
-                              const std::map<std::string, double>* eloDeltas) {
+                              const std::map<std::string, EloChange>* eloChanges) {
     Category cat = categorize(r);
     std::string tag = cat == Category::Other
                           ? std::string("_Off-format ") + EMDASH + " not counted toward a leaderboard._"
@@ -171,7 +172,7 @@ std::string formatMatchResult(const CarnageReport& r,
         std::vector<std::string> out = {header, "```", head};
         out.insert(out.end(), lines.begin(), lines.end());
         out.push_back("```");
-        return join(out, "\n") + formatEloLine(r, eloDeltas);
+        return join(out, "\n") + formatEloLine(r, eloChanges);
     }
 
     // Team game — group, winning team first, players in each team by score desc.
@@ -218,5 +219,5 @@ std::string formatMatchResult(const CarnageReport& r,
     std::vector<std::string> out = {header, "```"};
     out.insert(out.end(), blocks.begin(), blocks.end());
     out.push_back("```");
-    return rstrip(join(out, "\n")) + formatEloLine(r, eloDeltas);
+    return rstrip(join(out, "\n")) + formatEloLine(r, eloChanges);
 }

@@ -31,9 +31,15 @@ struct EloOptions {
 // Ratings sorted by rating descending (stable: ties keep first-seen order).
 std::vector<Rating> computeRatings(const std::vector<StoredMatch>& matches, EloOptions opt);
 
-// Per-player rating change (xuid -> delta) produced by one specific match,
-// computed against the same per-category history the leaderboard uses. Empty
-// for off-format matches or if the match isn't in `matches`. Mirrors
-// matchEloDeltas in src/elo.ts.
-std::map<std::string, double> matchEloDeltas(const std::vector<StoredMatch>& matches,
-                                             const std::string& matchId, EloOptions opt);
+// A player's post-match rating and the change one match produced.
+struct EloChange {
+    double rating = 0;
+    double delta = 0;
+};
+
+// Per-player post-match rating + change (xuid -> EloChange) produced by one
+// specific match, computed against the same per-category history the
+// leaderboard uses. Empty for off-format matches or if the match isn't in
+// `matches`. Mirrors matchEloChanges in src/elo.ts.
+std::map<std::string, EloChange> matchEloChanges(const std::vector<StoredMatch>& matches,
+                                                 const std::string& matchId, EloOptions opt);

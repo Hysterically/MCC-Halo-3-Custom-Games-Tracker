@@ -16,10 +16,10 @@
 std::string formatLeaderboard(const std::vector<StoredMatch>& matches, EloOptions elo);
 
 // Detailed per-match summary: gametype, teams or FFA, K/D/A, winner.
-// `eloDeltas` (xuid -> rating change, nullable) appends a per-player ELO line
-// under the scoreboard table.
+// `eloChanges` (xuid -> post-match rating + change, nullable) appends a
+// per-player ELO line under the scoreboard table.
 std::string formatMatchResult(const CarnageReport& r,
-                              const std::map<std::string, double>* eloDeltas = nullptr);
+                              const std::map<std::string, EloChange>* eloChanges = nullptr);
 
 // Short caption posted above the rendered carnage image.
 std::string formatMatchCaption(const CarnageReport& r);

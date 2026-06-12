@@ -380,12 +380,19 @@ CarnageReport sampleReport() {
 }
 
 namespace {
-// Plausible per-player ELO changes so the sample render/post show the
-// scoreboard footer (mirrors sampleEloDeltas in src/sampleReports.ts).
-std::map<std::string, double> sampleEloDeltas(const CarnageReport& r) {
-    std::map<std::string, double> d;
-    for (const auto& p : r.players)
-        d[p.xuid] = p.teamId == r.winningTeamId.value_or(-1) ? 16 : -16;
+// Plausible post-match ratings + changes so the sample render/post show the
+// ELO column (mirrors sampleEloChanges in src/sampleReports.ts).
+std::map<std::string, EloChange> sampleEloChanges(const CarnageReport& r) {
+    const double winnerRatings[4] = {1342, 1318, 1296, 1275};
+    const double loserRatings[4] = {1289, 1263, 1241, 1210};
+    std::map<std::string, EloChange> d;
+    int w = 0, l = 0;
+    for (const auto& p : r.players) {
+        if (p.teamId == r.winningTeamId.value_or(-1))
+            d[p.xuid] = {winnerRatings[w++ % 4], 16};
+        else
+            d[p.xuid] = {loserRatings[l++ % 4], -16};
+    }
     return d;
 }
 }  // namespace
@@ -405,9 +412,9 @@ int cmdRender(const std::vector<std::string>& args) {
         r.mapVariant = map.mapVariant;
     }
     std::string out = args.size() > 1 ? args[1] : "carnage.png";
-    std::map<std::string, double> deltas;
-    if (args[0] == "--sample") deltas = sampleEloDeltas(r);
-    std::vector<unsigned char> png = renderCarnagePng(r, deltas.empty() ? nullptr : &deltas);
+    std::map<std::string, EloChange> changes;
+    if (args[0] == "--sample") changes = sampleEloChanges(r);
+    std::vector<unsigned char> png = renderCarnagePng(r, changes.empty() ? nullptr : &changes);
     if (!util::writeFile(out, std::string(png.begin(), png.end()))) {
         std::cerr << "could not write " << out << "\n";
         return 1;
@@ -422,8 +429,8 @@ int cmdPostSample() {
         return 1;
     }
     CarnageReport sample = sampleReport();
-    std::map<std::string, double> deltas = sampleEloDeltas(sample);
-    postMatchResult(config().discordResultsWebhookUrl, sample, &deltas);
+    std::map<std::string, EloChange> changes = sampleEloChanges(sample);
+    postMatchResult(config().discordResultsWebhookUrl, sample, &changes);
     std::cout << "Posted a sample carnage image to the results webhook.\n"
                  "(It is a fake match \xE2\x80\x94 delete the Discord message when done looking.)\n";
     return 0;
@@ -534,19 +541,19 @@ int cmdWatch() {
         if (!report) return;
         std::cout << "[match] " << matchLabel(*report) << "\n";
 
-        // Per-player ELO change for the result post — replayed from the
-        // recorded history, so it matches exactly what the leaderboard will
-        // apply. Best effort: a DB hiccup just posts without the deltas.
-        std::map<std::string, double> eloDeltas;
+        // Per-player ELO rating + change for the result post — replayed from
+        // the recorded history, so it matches exactly what the leaderboard
+        // will apply. Best effort: a DB hiccup just posts without the ratings.
+        std::map<std::string, EloChange> eloChanges;
         try {
-            eloDeltas = matchEloDeltas(db->matchesChrono(), report->matchId, eloOpt());
+            eloChanges = matchEloChanges(db->matchesChrono(), report->matchId, eloOpt());
         } catch (const std::exception& e) {
-            std::cerr << "[elo] delta computation failed: " << e.what() << "\n";
+            std::cerr << "[elo] change computation failed: " << e.what() << "\n";
         }
 
         try {
             postMatchResult(config().discordResultsWebhookUrl, *report,
-                            eloDeltas.empty() ? nullptr : &eloDeltas);
+                            eloChanges.empty() ? nullptr : &eloChanges);
         } catch (const std::exception& e) {
             std::cerr << "[discord] result post failed: " << e.what() << "\n";
         }

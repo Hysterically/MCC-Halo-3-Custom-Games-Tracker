@@ -125,18 +125,25 @@ function name(m: StoredMatch, xuid: string): string {
   return m.players.find((p) => p.xuid === xuid)?.gamertag ?? xuid;
 }
 
+/** A player's post-match rating and the change this match produced. */
+export interface EloChange {
+  rating: number;
+  delta: number;
+}
+
 /**
- * Per-player rating change (xuid -> delta) produced by one specific match,
- * computed against the same per-category history the leaderboard uses: replay
- * the match's category up to and including it, and diff against the replay
- * that stops just before it. Returns null for off-format matches (they don't
- * touch any board) or if the match isn't in `matches`.
+ * Per-player post-match rating + change (xuid -> EloChange) produced by one
+ * specific match, computed against the same per-category history the
+ * leaderboard uses: replay the match's category up to and including it, and
+ * diff against the replay that stops just before it. Returns null for
+ * off-format matches (they don't touch any board) or if the match isn't in
+ * `matches`.
  */
-export function matchEloDeltas(
+export function matchEloChanges(
   matches: StoredMatch[],
   matchId: string,
   opt: EloOptions,
-): Map<string, number> | null {
+): Map<string, EloChange> | null {
   const idx = matches.findIndex((m) => m.matchId === matchId);
   if (idx === -1) return null;
   const match = matches[idx];
@@ -149,11 +156,11 @@ export function matchEloDeltas(
   );
   const after = new Map(computeRatings(hist, opt).map((r) => [r.xuid, r.rating]));
 
-  const deltas = new Map<string, number>();
+  const changes = new Map<string, EloChange>();
   for (const p of match.players) {
     const a = after.get(p.xuid);
     if (a === undefined) continue;
-    deltas.set(p.xuid, a - (before.get(p.xuid) ?? opt.start));
+    changes.set(p.xuid, { rating: a, delta: a - (before.get(p.xuid) ?? opt.start) });
   }
-  return deltas;
+  return changes;
 }

@@ -8,13 +8,13 @@
 
 import { config } from "./config.ts";
 import { postMatchResult } from "./discord.ts";
-import { sampleTeam, sampleEloDeltas } from "./sampleReports.ts";
+import { sampleTeam, sampleEloChanges } from "./sampleReports.ts";
 
 if (!config.discordResultsWebhookUrl) {
   console.error("No DISCORD_RESULTS_WEBHOOK_URL in .env — nothing to post to.");
   process.exit(1);
 }
 
-await postMatchResult(config.discordResultsWebhookUrl, sampleTeam, sampleEloDeltas(sampleTeam));
+await postMatchResult(config.discordResultsWebhookUrl, sampleTeam, sampleEloChanges(sampleTeam));
 console.log("Posted a sample carnage image to the results webhook.");
 console.log("(It is a fake match — delete the Discord message when done looking.)");
