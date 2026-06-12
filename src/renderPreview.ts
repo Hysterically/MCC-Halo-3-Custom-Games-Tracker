@@ -7,8 +7,8 @@
 
 import { writeFile } from "node:fs/promises";
 import { renderCarnagePng } from "./renderCarnage.ts";
-import { sampleTeam, sampleFfa, sampleEloDeltas } from "./sampleReports.ts";
+import { sampleTeam, sampleFfa, sampleEloChanges } from "./sampleReports.ts";
 
-await writeFile("preview-team.png", renderCarnagePng(sampleTeam, sampleEloDeltas(sampleTeam)));
-await writeFile("preview-ffa.png", renderCarnagePng(sampleFfa, sampleEloDeltas(sampleFfa)));
+await writeFile("preview-team.png", renderCarnagePng(sampleTeam, sampleEloChanges(sampleTeam)));
+await writeFile("preview-ffa.png", renderCarnagePng(sampleFfa, sampleEloChanges(sampleFfa)));
 console.log("wrote preview-team.png, preview-ffa.png");

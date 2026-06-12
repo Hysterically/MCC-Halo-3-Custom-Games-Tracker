@@ -54,23 +54,30 @@ constexpr int ROW_H = 46;
 constexpr int ROW_GAP = 3;
 constexpr int BOTTOM_PAD = 22;
 
-// "ELO CHANGE" footer under the scoreboard (only drawn when deltas are given).
-constexpr int FOOTER_COLS = 4;
-constexpr int FOOTER_HEADER_OFFSET = 42;  // rows bottom -> footer header baseline
-constexpr int FOOTER_LINE_H = 30;         // per line of player entries
-
-// Each stat column: header left-aligned at `x`, value right-aligned at `right`.
+// Each stat column: header left-aligned at `x`, value right-aligned at
+// `right`; `stat` indexes {score, kills, assists, deaths} (-1 = ELO).
+// Rated matches use the wider layout with an ELO column right of Deaths;
+// its cell stays neutral instead of team-coloured.
 struct Col {
     const wchar_t* label;
     float x;
     float right;
+    int stat;
 };
 const Col COLS[4] = {
-    {L"SCORE", 700, 880},
-    {L"KILLS", 905, 1082},
-    {L"ASSISTS", 1107, 1284},
-    {L"DEATHS", 1309, 1484},
+    {L"SCORE", 700, 880, 0},
+    {L"KILLS", 905, 1082, 1},
+    {L"ASSISTS", 1107, 1284, 2},
+    {L"DEATHS", 1309, 1484, 3},
 };
+const Col COLS_ELO[5] = {
+    {L"SCORE", 500, 680, 0},
+    {L"KILLS", 705, 882, 1},
+    {L"ASSISTS", 907, 1084, 2},
+    {L"DEATHS", 1109, 1284, 3},
+    {L"ELO", 1309, 1484, -1},
+};
+const Color ELO_CELL_COLOR(0x27, 0x2e, 0x37);  // neutral, regardless of team colour
 
 // --- small helpers -----------------------------------------------------------
 
@@ -176,24 +183,26 @@ void drawTextRight(Graphics& g, const std::wstring& s, const PxFont& f, const Br
 }  // namespace
 
 std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& r,
-                                           const std::map<std::string, double>* eloDeltas) {
+                                           const std::map<std::string, EloChange>* eloChanges) {
     ensureGdiplus();
 
     std::vector<CarnagePlayer> players = orderedPlayers(r);
     int n = static_cast<int>(players.size());
 
-    // ELO-change footer entries, in scoreboard order (guests have no delta).
-    std::vector<std::pair<const CarnagePlayer*, double>> changes;
-    if (eloDeltas) {
+    // Use the ELO-column layout when any player has a rating change.
+    bool hasElo = false;
+    if (eloChanges) {
         for (const auto& p : players) {
-            auto it = eloDeltas->find(p.xuid);
-            if (it != eloDeltas->end()) changes.emplace_back(&p, it->second);
+            if (eloChanges->count(p.xuid)) {
+                hasElo = true;
+                break;
+            }
         }
     }
-    int footerLines = static_cast<int>((changes.size() + FOOTER_COLS - 1) / FOOTER_COLS);
-    int rowsBottom = ROWS_TOP + n * (ROW_H + ROW_GAP) - ROW_GAP;
-    int footerH = footerLines ? FOOTER_HEADER_OFFSET + footerLines * FOOTER_LINE_H : 0;
-    int height = rowsBottom + footerH + BOTTOM_PAD;
+    const Col* cols = hasElo ? COLS_ELO : COLS;
+    const int nCols = hasElo ? 5 : 4;
+
+    int height = ROWS_TOP + n * (ROW_H + ROW_GAP) - ROW_GAP + BOTTOM_PAD;
 
     Bitmap bmp(W, height, PixelFormat32bppARGB);
     Graphics g(&bmp);
@@ -236,9 +245,14 @@ std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& r,
 
     // Column headers.
     drawText(g, L"PLAYERS", headerFont, headerBrush, MARGIN + 2, HEADER_BASELINE, fmt);
-    for (const Col& c : COLS) drawText(g, c.label, headerFont, headerBrush, c.x, HEADER_BASELINE, fmt);
+    for (int c = 0; c < nCols; ++c)
+        drawText(g, cols[c].label, headerFont, headerBrush, cols[c].x, HEADER_BASELINE, fmt);
 
     // Rows.
+    SolidBrush eloCell(ELO_CELL_COLOR);
+    SolidBrush up(Color(0x7e, 0xd8, 0x7e));
+    SolidBrush down(Color(0xe8, 0x83, 0x7f));
+    SolidBrush flat(Color(0xc8, 0xcf, 0xd8));
     for (int i = 0; i < n; ++i) {
         const CarnagePlayer& p = players[i];
         float y = static_cast<float>(ROWS_TOP + i * (ROW_H + ROW_GAP));
@@ -249,39 +263,40 @@ std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& r,
         g.FillRectangle(&rowBrush, static_cast<REAL>(MARGIN), y, static_cast<REAL>(W - 2 * MARGIN),
                         static_cast<REAL>(ROW_H));
 
+        // The ELO cell stays neutral: a rating change is not a team stat.
+        for (int c = 0; c < nCols; ++c) {
+            if (cols[c].stat >= 0) continue;
+            float left = cols[c].x - 14;
+            float right = c + 1 < nCols ? cols[c + 1].x - 14 : static_cast<float>(W - MARGIN);
+            g.FillRectangle(&eloCell, left, y, right - left, static_cast<REAL>(ROW_H));
+        }
+
         // Vertical separators between stat columns.
-        for (const Col& c : COLS)
-            g.FillRectangle(&divider, c.x - 14, y, 2.0f, static_cast<REAL>(ROW_H));
+        for (int c = 0; c < nCols; ++c)
+            g.FillRectangle(&divider, cols[c].x - 14, y, 2.0f, static_cast<REAL>(ROW_H));
 
         float mid = y + ROW_H / 2.0f + 8.0f;  // baseline that centres 22px text
         drawText(g, widen(displayName(p.gamertag)), rowFont, white, MARGIN + 16, mid, fmt);
 
         const long long values[4] = {p.score, p.kills, p.assists, p.deaths};
-        for (int c = 0; c < 4; ++c)
-            drawTextRight(g, std::to_wstring(values[c]), rowFont, white, COLS[c].right - 6, mid, fmt);
-    }
-
-    // Per-player ELO change under the scoreboard.
-    if (footerLines) {
-        drawText(g, L"ELO CHANGE", headerFont, headerBrush, MARGIN + 2,
-                 static_cast<float>(rowsBottom + FOOTER_HEADER_OFFSET), fmt);
-        SolidBrush up(Color(0x7e, 0xd8, 0x7e));
-        SolidBrush down(Color(0xe8, 0x83, 0x7f));
-        SolidBrush flat(Color(0xc8, 0xcf, 0xd8));
-        float colW = (W - 2.0f * MARGIN) / FOOTER_COLS;
-        for (size_t i = 0; i < changes.size(); ++i) {
-            const CarnagePlayer& p = *changes[i].first;
-            long d = util::jsRound(changes[i].second);
-            float x = MARGIN + 2 + static_cast<float>(i % FOOTER_COLS) * colW;
-            float y = static_cast<float>(rowsBottom + FOOTER_HEADER_OFFSET +
-                                         FOOTER_LINE_H * (static_cast<int>(i / FOOTER_COLS) + 1));
-            std::wstring name = widen(displayName(p.gamertag));
-            drawText(g, name, rowFont, white, x, y, fmt);
-            RectF nameBox;
-            g.MeasureString(name.c_str(), -1, rowFont.font.get(), PointF(0, 0), fmt, &nameBox);
+        for (int c = 0; c < nCols; ++c) {
+            if (cols[c].stat >= 0) {
+                drawTextRight(g, std::to_wstring(values[cols[c].stat]), rowFont, white,
+                              cols[c].right - 6, mid, fmt);
+                continue;
+            }
+            // Post-match rating + change, e.g. "1318 +16" (green gain / red
+            // loss); blank for unrated players.
+            auto it = eloChanges->find(p.xuid);
+            if (it == eloChanges->end()) continue;
+            long d = util::jsRound(it->second.delta);
             std::wstring ds = widen((d >= 0 ? "+" : "") + std::to_string(d));
             const SolidBrush& brush = d > 0 ? up : d < 0 ? down : flat;
-            drawText(g, ds, rowFont, brush, x + nameBox.Width + 10, y, fmt);
+            drawTextRight(g, ds, rowFont, brush, cols[c].right - 6, mid, fmt);
+            RectF dsBox;
+            g.MeasureString(ds.c_str(), -1, rowFont.font.get(), PointF(0, 0), fmt, &dsBox);
+            drawTextRight(g, std::to_wstring(util::jsRound(it->second.rating)), rowFont, white,
+                          cols[c].right - 6 - dsBox.Width - 9, mid, fmt);
         }
     }
 

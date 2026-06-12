@@ -138,9 +138,9 @@ std::vector<Rating> computeRatings(const std::vector<StoredMatch>& matches, EloO
     return table;
 }
 
-std::map<std::string, double> matchEloDeltas(const std::vector<StoredMatch>& matches,
-                                             const std::string& matchId, EloOptions opt) {
-    std::map<std::string, double> deltas;
+std::map<std::string, EloChange> matchEloChanges(const std::vector<StoredMatch>& matches,
+                                                 const std::string& matchId, EloOptions opt) {
+    std::map<std::string, EloChange> changes;
 
     size_t idx = matches.size();
     for (size_t i = 0; i < matches.size(); ++i) {
@@ -149,10 +149,10 @@ std::map<std::string, double> matchEloDeltas(const std::vector<StoredMatch>& mat
             break;
         }
     }
-    if (idx == matches.size()) return deltas;
+    if (idx == matches.size()) return changes;
     const StoredMatch& match = matches[idx];
     Category cat = categorize(match);
-    if (cat == Category::Other) return deltas;
+    if (cat == Category::Other) return changes;
 
     // Replay the match's category up to and including it, and diff against the
     // replay that stops just before it.
@@ -169,7 +169,7 @@ std::map<std::string, double> matchEloDeltas(const std::vector<StoredMatch>& mat
         auto a = after.find(p.xuid);
         if (a == after.end()) continue;
         auto b = before.find(p.xuid);
-        deltas[p.xuid] = a->second - (b != before.end() ? b->second : opt.start);
+        changes[p.xuid] = {a->second, a->second - (b != before.end() ? b->second : opt.start)};
     }
-    return deltas;
+    return changes;
 }
