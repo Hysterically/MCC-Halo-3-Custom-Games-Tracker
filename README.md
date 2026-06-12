@@ -1,14 +1,15 @@
 # Halo 3 Customs Tracker
 
-Plays Halo 3 custom games with your friends in MCC? This little program watches
-your games and posts the results to your Discord server automatically:
+Plays Halo 3 custom games with us in MCC? This little program watches your
+games and posts the results to **our shared Discord leaderboard**
+automatically. There's **one leaderboard for everyone** — no matter whose PC
+records a match, it all feeds the same standings:
 
 - **After every match** — a picture of the post-game carnage screen (scores,
-  kills, deaths) in your results channel.
-- **A live leaderboard** — one always-up-to-date standings post with separate
+  kills, deaths) in the results channel.
+- **The live leaderboard** — one always-up-to-date standings post with separate
   **2v2 / 4v4 / FFA** rankings, updated after every game.
-- **Optional**: type `/leaderboard` or `/stats` in Discord to see standings on
-  demand.
+- Type `/leaderboard` or `/stats` in Discord to check standings on demand.
 
 It works by reading the match report files MCC saves on your PC after each game.
 No logins, no passwords, nothing to sign up for — it never touches your
@@ -18,59 +19,57 @@ Microsoft or Xbox account.
 
 1. **[⬇ Download the tracker (zip)](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/raw/main/cpp/dist/h3-tracker-windows.zip)**
 2. Right-click the zip → **Extract All** → put the folder anywhere you like.
-3. Double-click **`Start.bat`**.
-4. The first time, it asks for two Discord "webhook" URLs — one for match
-   results, one for the leaderboard — **and walks you through creating them**
-   (it's about four clicks in Discord). You can type `skip` and add them later.
+3. **Ask Hysterically for the group settings file (`.env`)** and drop it into
+   that folder. This is what connects you to *our* shared leaderboard and
+   Discord channels — it's sent privately, never posted publicly.
+4. Double-click **`Start.bat`**.
 5. That's it. Leave the window open while you play customs; results appear in
-   Discord on their own.
-
-To change your Discord settings later, double-click **`Setup.bat`**.
+   Discord on their own. Don't worry about doubling up — even if several of us
+   run the tracker during the same game, each match is counted exactly once.
 
 **Requirements:** Windows 10/11 and Halo: MCC. Nothing to install — the zip is
 a single small program (~1 MB).
 
 **Important:** the tracker only sees games that *your* PC played in. One person
-in the lobby running it is enough (the match report lists everyone), so the
-usual setup is: whoever hosts the customs runs the tracker.
+in the lobby running it is enough (the match report lists everyone), so
+whoever hosts the customs should have it running.
 
 ## Common questions
 
 **Does everyone need to run it?**
-No — one PC in the lobby is enough. If different people host on different
-nights, see "one leaderboard across several PCs" below.
+No — one PC in the lobby is enough, and it doesn't hurt if several people run
+it. The shared database makes sure every match is recorded exactly once, on one
+combined leaderboard.
 
 **A player's name looks wrong on the leaderboard.**
 Open `aliases.json` (in the tracker folder) with Notepad and add a line like
 `"TheirGamertag": "Display Name"`. It only changes how the name is shown.
 
 **Where does my data go?**
-Match history is saved in a small file on your PC (`data\h3.db`). Nothing is
-uploaded anywhere except the posts to your own Discord server.
+Matches go into the group's shared database (that's what makes it one
+leaderboard for everyone) and the posts go to our Discord server. Nothing else
+leaves your PC.
 
-**Can two or more hosts share one leaderboard?**
-Yes. Create a free database at [turso.tech](https://turso.tech), then put its
-URL and token into each host's `.env` file (in the tracker folder):
-
-```
-DB_URL=libsql://your-database.turso.io
-DB_AUTH_TOKEN=your-token
-```
-
-Every PC pointed at the same database feeds one combined leaderboard, and each
-match is only posted once no matter how many of you were in the game.
-
-**How do I get the `/leaderboard` and `/stats` commands?**
-Add a Discord bot token to `.env`:
-
-```
-DISCORD_BOT_TOKEN=your-bot-token
-DISCORD_GUILD_ID=your-server-id    (optional — makes the commands show up instantly)
-```
+**Why shouldn't I share the `.env` file?**
+It contains the keys to the group's leaderboard database and Discord channels —
+anyone who has it can post there. Pass it around privately (a Discord DM is
+fine), just never post it somewhere public.
 
 **MCC saves its files somewhere unusual on my PC.**
 The tracker reads `%USERPROFILE%\AppData\LocalLow\MCC\Temporary`. If yours
 differs, set `MCC_CARNAGE_DIR` in `.env`.
+
+**I'm not in this group — can I run my own leaderboard with this?**
+Yes, everything is self-serve. Skip the `.env` step: on first launch the
+tracker walks you through creating two Discord webhooks for your own server
+(about four clicks each; `Setup.bat` re-runs this anytime). That gives your
+group its own leaderboard, stored on your PC. Optional extras in `.env`:
+
+- **Several hosts, one leaderboard:** create a free database at
+  [turso.tech](https://turso.tech) and set `DB_URL=libsql://…` and
+  `DB_AUTH_TOKEN=…` on every host's PC.
+- **`/leaderboard` and `/stats` commands:** set `DISCORD_BOT_TOKEN=…` and
+  `DISCORD_GUILD_ID=…` (the guild id makes the commands show up instantly).
 
 ---
 
