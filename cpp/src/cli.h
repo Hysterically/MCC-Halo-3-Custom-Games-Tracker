@@ -11,6 +11,7 @@ int cmdParse(const std::vector<std::string>& args);
 int cmdInspect(const std::vector<std::string>& args);
 int cmdShow(const std::vector<std::string>& args);         // debug: print formatMatchResult
 int cmdRender(const std::vector<std::string>& args);       // debug: write the carnage PNG
+int cmdRenderBoard(const std::vector<std::string>& args);  // debug: write the leaderboard PNG
 int cmdPostSample();                                        // debug: post sample image to webhook
 int cmdPingWebhook(const std::vector<std::string>& args);  // debug: GET a webhook (no post)
 int cmdCurlInfo();                                          // debug: curl/TLS/protocol info

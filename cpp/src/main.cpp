@@ -63,6 +63,7 @@ int main(int argc, char** argv) {
         if (cmd == "inspect") return cmdInspect(rest);
         if (cmd == "show") return cmdShow(rest);
         if (cmd == "render") return cmdRender(rest);
+        if (cmd == "renderboard") return cmdRenderBoard(rest);
         if (cmd == "post-sample") return cmdPostSample();
         if (cmd == "ping-webhook") return cmdPingWebhook(rest);
         if (cmd == "curl-info") return cmdCurlInfo();
