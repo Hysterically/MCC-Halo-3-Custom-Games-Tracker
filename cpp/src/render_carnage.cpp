@@ -19,6 +19,7 @@ using std::min;
 #include <string>
 
 #include "aliases.h"
+#include "util.h"
 
 #pragma comment(lib, "gdiplus.lib")
 
@@ -52,6 +53,11 @@ constexpr int ROWS_TOP = 118;
 constexpr int ROW_H = 46;
 constexpr int ROW_GAP = 3;
 constexpr int BOTTOM_PAD = 22;
+
+// "ELO CHANGE" footer under the scoreboard (only drawn when deltas are given).
+constexpr int FOOTER_COLS = 4;
+constexpr int FOOTER_HEADER_OFFSET = 42;  // rows bottom -> footer header baseline
+constexpr int FOOTER_LINE_H = 30;         // per line of player entries
 
 // Each stat column: header left-aligned at `x`, value right-aligned at `right`.
 struct Col {
@@ -169,12 +175,25 @@ void drawTextRight(Graphics& g, const std::wstring& s, const PxFont& f, const Br
 
 }  // namespace
 
-std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& r) {
+std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& r,
+                                           const std::map<std::string, double>* eloDeltas) {
     ensureGdiplus();
 
     std::vector<CarnagePlayer> players = orderedPlayers(r);
     int n = static_cast<int>(players.size());
-    int height = ROWS_TOP + n * (ROW_H + ROW_GAP) - ROW_GAP + BOTTOM_PAD;
+
+    // ELO-change footer entries, in scoreboard order (guests have no delta).
+    std::vector<std::pair<const CarnagePlayer*, double>> changes;
+    if (eloDeltas) {
+        for (const auto& p : players) {
+            auto it = eloDeltas->find(p.xuid);
+            if (it != eloDeltas->end()) changes.emplace_back(&p, it->second);
+        }
+    }
+    int footerLines = static_cast<int>((changes.size() + FOOTER_COLS - 1) / FOOTER_COLS);
+    int rowsBottom = ROWS_TOP + n * (ROW_H + ROW_GAP) - ROW_GAP;
+    int footerH = footerLines ? FOOTER_HEADER_OFFSET + footerLines * FOOTER_LINE_H : 0;
+    int height = rowsBottom + footerH + BOTTOM_PAD;
 
     Bitmap bmp(W, height, PixelFormat32bppARGB);
     Graphics g(&bmp);
@@ -240,6 +259,30 @@ std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& r) {
         const long long values[4] = {p.score, p.kills, p.assists, p.deaths};
         for (int c = 0; c < 4; ++c)
             drawTextRight(g, std::to_wstring(values[c]), rowFont, white, COLS[c].right - 6, mid, fmt);
+    }
+
+    // Per-player ELO change under the scoreboard.
+    if (footerLines) {
+        drawText(g, L"ELO CHANGE", headerFont, headerBrush, MARGIN + 2,
+                 static_cast<float>(rowsBottom + FOOTER_HEADER_OFFSET), fmt);
+        SolidBrush up(Color(0x7e, 0xd8, 0x7e));
+        SolidBrush down(Color(0xe8, 0x83, 0x7f));
+        SolidBrush flat(Color(0xc8, 0xcf, 0xd8));
+        float colW = (W - 2.0f * MARGIN) / FOOTER_COLS;
+        for (size_t i = 0; i < changes.size(); ++i) {
+            const CarnagePlayer& p = *changes[i].first;
+            long d = util::jsRound(changes[i].second);
+            float x = MARGIN + 2 + static_cast<float>(i % FOOTER_COLS) * colW;
+            float y = static_cast<float>(rowsBottom + FOOTER_HEADER_OFFSET +
+                                         FOOTER_LINE_H * (static_cast<int>(i / FOOTER_COLS) + 1));
+            std::wstring name = widen(displayName(p.gamertag));
+            drawText(g, name, rowFont, white, x, y, fmt);
+            RectF nameBox;
+            g.MeasureString(name.c_str(), -1, rowFont.font.get(), PointF(0, 0), fmt, &nameBox);
+            std::wstring ds = widen((d >= 0 ? "+" : "") + std::to_string(d));
+            const SolidBrush& brush = d > 0 ? up : d < 0 ? down : flat;
+            drawText(g, ds, rowFont, brush, x + nameBox.Width + 10, y, fmt);
+        }
     }
 
     // Encode to PNG via an in-memory stream.

@@ -75,6 +75,27 @@ std::string rstrip(std::string s) {
     return s.substr(0, b + 1);
 }
 
+// One line of per-player ELO changes appended under the scoreboard table,
+// biggest gain first. Empty when there are no deltas. Mirrors formatEloLine in
+// src/discord.ts (byte-identical output).
+std::string formatEloLine(const CarnageReport& r, const std::map<std::string, double>* deltas) {
+    if (!deltas || deltas->empty()) return "";
+    std::vector<std::pair<std::string, double>> entries;  // display name, delta
+    for (const auto& p : r.players) {
+        auto it = deltas->find(p.xuid);
+        if (it != deltas->end()) entries.emplace_back(displayName(p.gamertag), it->second);
+    }
+    if (entries.empty()) return "";
+    std::stable_sort(entries.begin(), entries.end(),
+                     [](const auto& a, const auto& b) { return a.second > b.second; });
+    std::vector<std::string> parts;
+    for (const auto& [name, delta] : entries) {
+        long d = util::jsRound(delta);
+        parts.push_back(name + " " + (d >= 0 ? "+" : "") + std::to_string(d));
+    }
+    return "\n\xF0\x9F\x93\x88 **Elo:** " + join(parts, " \xC2\xB7 ");  // 📈, " · "
+}
+
 }  // namespace
 
 std::string formatLeaderboard(const std::vector<StoredMatch>& matches, EloOptions elo) {
@@ -104,7 +125,8 @@ std::string formatMatchCaption(const CarnageReport& r) {
     return (map.empty() ? "" : "\xF0\x9F\x97\xBA\xEF\xB8\x8F **" + map + "**\n") + tag;
 }
 
-std::string formatMatchResult(const CarnageReport& r) {
+std::string formatMatchResult(const CarnageReport& r,
+                              const std::map<std::string, double>* eloDeltas) {
     Category cat = categorize(r);
     std::string tag = cat == Category::Other
                           ? std::string("_Off-format ") + EMDASH + " not counted toward a leaderboard._"
@@ -149,7 +171,7 @@ std::string formatMatchResult(const CarnageReport& r) {
         std::vector<std::string> out = {header, "```", head};
         out.insert(out.end(), lines.begin(), lines.end());
         out.push_back("```");
-        return join(out, "\n");
+        return join(out, "\n") + formatEloLine(r, eloDeltas);
     }
 
     // Team game — group, winning team first, players in each team by score desc.
@@ -196,5 +218,5 @@ std::string formatMatchResult(const CarnageReport& r) {
     std::vector<std::string> out = {header, "```"};
     out.insert(out.end(), blocks.begin(), blocks.end());
     out.push_back("```");
-    return rstrip(join(out, "\n"));
+    return rstrip(join(out, "\n")) + formatEloLine(r, eloDeltas);
 }

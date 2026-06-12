@@ -3,9 +3,14 @@
 // Mirrors src/renderCarnage.ts. Uses GDI+ (ships with Windows) — no deps.
 #pragma once
 #include <cstdint>
+#include <map>
+#include <string>
 #include <vector>
 
 #include "carnage.h"
 
 // Returns PNG bytes. Throws std::runtime_error if GDI+ rendering fails.
-std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& report);
+// `eloDeltas` (xuid -> rating change, nullable) adds an "ELO CHANGE" footer
+// under the scoreboard.
+std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& report,
+                                           const std::map<std::string, double>* eloDeltas = nullptr);

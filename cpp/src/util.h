@@ -64,8 +64,9 @@ inline std::vector<std::string> splitLines(const std::string& s) {
     return out;
 }
 
-// JS Math.round: round half toward +Infinity (NOT away-from-zero). Elo and
-// win% are always >= 0 here, so floor(x + 0.5) matches exactly.
+// JS Math.round: round half toward +Infinity (NOT away-from-zero).
+// floor(x + 0.5) reproduces that exactly for every finite input, including
+// the negative elo deltas (Math.round(-2.5) === -2 === floor(-2.0)).
 inline long jsRound(double x) { return static_cast<long>(std::floor(x + 0.5)); }
 
 // JS Number.prototype.toFixed(2): fixed 2 decimals. printf rounds half-to-even

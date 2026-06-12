@@ -19,7 +19,8 @@ import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import chokidar from "chokidar";
 import { config } from "./config.ts";
-import { openDb, recordMatch, matchCount } from "./db.ts";
+import { openDb, recordMatch, matchCount, matchesChrono } from "./db.ts";
+import { matchEloDeltas } from "./elo.ts";
 import { parseCarnageFile, type CarnageReport } from "./parseCarnage.ts";
 import { findMapInfo } from "./mapInfo.ts";
 import { postMatchResult, upsertLeaderboard, startBot } from "./discord.ts";
@@ -116,8 +117,18 @@ async function onFile(path: string): Promise<void> {
   if (!report) return;
   console.log(`[match] ${label(report)}`);
 
+  // Per-player ELO change for the result post — replayed from the recorded
+  // history, so it matches exactly what the leaderboard will apply. Best
+  // effort: a DB hiccup just posts the result without the deltas.
+  let eloDeltas: Map<string, number> | null = null;
   try {
-    await postMatchResult(config.discordResultsWebhookUrl, report);
+    eloDeltas = matchEloDeltas(await matchesChrono(db), report.matchId, elo);
+  } catch (e) {
+    console.error("[elo] delta computation failed:", (e as Error).message);
+  }
+
+  try {
+    await postMatchResult(config.discordResultsWebhookUrl, report, eloDeltas ?? undefined);
   } catch (e) {
     console.error("[discord] result post failed:", (e as Error).message);
   }

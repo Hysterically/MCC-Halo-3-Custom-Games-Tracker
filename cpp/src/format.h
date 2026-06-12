@@ -3,6 +3,7 @@
 // announce, and the gateway bot can all reuse it. Mirrors the formatters in
 // src/discord.ts.
 #pragma once
+#include <map>
 #include <string>
 #include <vector>
 
@@ -15,7 +16,10 @@
 std::string formatLeaderboard(const std::vector<StoredMatch>& matches, EloOptions elo);
 
 // Detailed per-match summary: gametype, teams or FFA, K/D/A, winner.
-std::string formatMatchResult(const CarnageReport& r);
+// `eloDeltas` (xuid -> rating change, nullable) appends a per-player ELO line
+// under the scoreboard table.
+std::string formatMatchResult(const CarnageReport& r,
+                              const std::map<std::string, double>* eloDeltas = nullptr);
 
 // Short caption posted above the rendered carnage image.
 std::string formatMatchCaption(const CarnageReport& r);
