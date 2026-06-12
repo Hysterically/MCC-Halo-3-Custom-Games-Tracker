@@ -27,6 +27,7 @@ set(H3_SOURCES
   src/db_hrana.cpp
   src/http.cpp
   src/render_carnage.cpp
+  src/render_leaderboard.cpp
   src/discord_webhook.cpp
   src/discord_gateway.cpp
   src/watcher.cpp

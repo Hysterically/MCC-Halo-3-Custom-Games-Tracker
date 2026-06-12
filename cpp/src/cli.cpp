@@ -25,6 +25,7 @@
 #include "http.h"
 #include "mapinfo.h"
 #include "render_carnage.h"
+#include "render_leaderboard.h"
 #include "util.h"
 #include "watcher.h"
 
@@ -415,6 +416,61 @@ int cmdRender(const std::vector<std::string>& args) {
     std::map<std::string, EloChange> changes;
     if (args[0] == "--sample") changes = sampleEloChanges(r);
     std::vector<unsigned char> png = renderCarnagePng(r, changes.empty() ? nullptr : &changes);
+    if (!util::writeFile(out, std::string(png.begin(), png.end()))) {
+        std::cerr << "could not write " << out << "\n";
+        return 1;
+    }
+    std::cout << "wrote " << out << " (" << png.size() << " bytes)\n";
+    return 0;
+}
+
+// Sample standings (same data as src/renderLeaderboardPreview.ts) so the
+// leaderboard look can be checked without a live DB.
+std::vector<BoardSection> sampleBoardSections() {
+    // (gamertag, elo, wins, losses, draws, kd) — kills/deaths chosen to match kd.
+    struct Row {
+        const char* gt;
+        double elo;
+        long w, l, d;
+        double kd;
+    };
+    const Row rows[] = {
+        {"MK5 Phantom", 1247, 7, 3, 0, 0.94},  {"QB14GhOsT14QB", 1230, 5, 4, 0, 1.22},
+        {"oWhittaker", 1217, 5, 3, 0, 1.10},   {"mike domination", 1216, 1, 0, 0, 0.67},
+        {"Blopped", 1214, 2, 1, 0, 1.08},      {"Topher", 1214, 5, 5, 0, 0.87},
+        {"Hysterically", 1186, 5, 5, 0, 0.94}, {"I23L04D3D", 1184, 4, 4, 0, 1.11},
+        {"B7ENDEN", 1169, 0, 2, 0, 1.04},      {"MK5 FRAG", 1169, 3, 6, 0, 1.00},
+        {"iwreckshop91", 1153, 3, 7, 0, 0.85},
+    };
+    std::vector<Rating> ratings;
+    for (const Row& r : rows) {
+        Rating rt;
+        rt.xuid = std::string("0x") + r.gt;
+        rt.gamertag = r.gt;
+        rt.rating = r.elo;
+        rt.wins = r.w;
+        rt.losses = r.l;
+        rt.draws = r.d;
+        rt.games = r.w + r.l + r.d;
+        rt.kills = util::jsRound(r.kd * 100);
+        rt.deaths = 100;
+        ratings.push_back(rt);
+    }
+    return {{"2V2 LEADERBOARD", {}}, {"4V4 LEADERBOARD", ratings}, {"FFA LEADERBOARD", {}}};
+}
+
+int cmdRenderBoard(const std::vector<std::string>& args) {
+    std::vector<BoardSection> sections;
+    if (!args.empty() && args[0] == "--sample") {
+        sections = sampleBoardSections();
+    } else {
+        auto db = openDb(config().dbUrl, config().dbAuthToken);
+        sections = buildBoardSections(db->matchesChrono(), eloOpt());
+    }
+    std::string out = "leaderboard.png";
+    for (const auto& a : args)
+        if (a != "--sample") out = a;
+    std::vector<unsigned char> png = renderLeaderboardPng(sections);
     if (!util::writeFile(out, std::string(png.begin(), png.end()))) {
         std::cerr << "could not write " << out << "\n";
         return 1;

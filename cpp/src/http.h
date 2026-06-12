@@ -20,9 +20,11 @@ HttpResponse httpRequest(const std::string& method, const std::string& url,
                          const std::vector<std::string>& headers = {},
                          const std::string& body = "");
 
-// multipart/form-data POST with a JSON part (`payload_json`) and one file
-// part — the shape Discord webhooks expect for attachment uploads.
+// multipart/form-data request with a JSON part (`payload_json`) and one file
+// part — the shape Discord expects for attachment uploads. `method` is "POST"
+// for creates and "PATCH" for webhook-message edits that replace the image.
 HttpResponse httpPostMultipart(const std::string& url, const std::string& payloadJson,
                                const std::string& fileField, const std::string& filename,
                                const std::string& mimeType,
-                               const std::vector<unsigned char>& fileData);
+                               const std::vector<unsigned char>& fileData,
+                               const std::string& method = "POST");

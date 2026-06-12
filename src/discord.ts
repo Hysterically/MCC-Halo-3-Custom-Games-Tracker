@@ -4,9 +4,9 @@
  *  - results webhook  : posts a rich per-match summary after every new match
  *                       (gametype, teams, K/D/A, winner). Goes to e.g.
  *                       #game-results.
- *  - leaderboard hook : posts a fresh standings message after each update and
- *                       deletes the previous one, so the channel always holds a
- *                       single, newest leaderboard at the bottom. Goes to e.g.
+ *  - leaderboard hook : maintains one persistent standings message (the
+ *                       rendered leaderboard PNG; text table as fallback),
+ *                       edited in place after each update. Goes to e.g.
  *                       #leaderboard.
  *  - bot              : answers /leaderboard and /stats [player] on demand.
  *
@@ -28,6 +28,7 @@ import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import { categorize, CATEGORY_LABEL, BOARD_CATEGORIES, type Category } from "./category.ts";
 import { displayName } from "./aliases.ts";
 import { renderCarnagePng } from "./renderCarnage.ts";
+import { renderLeaderboardPng, type BoardSection } from "./renderLeaderboard.ts";
 
 // --- formatting ------------------------------------------------------------
 
@@ -59,7 +60,8 @@ function formatSection(title: string, ratings: Rating[], limit = 20): string {
 /**
  * The combined leaderboard message: one section per board category, each
  * computed from only that category's matches so a player's 2v2 ELO is
- * independent of their FFA ELO.
+ * independent of their FFA ELO. Text form — the fallback when the PNG
+ * renderer fails, and the console `board` output.
  */
 export function formatLeaderboard(matches: StoredMatch[], elo: EloOptions): string {
   const byCat = groupByCategory(matches);
@@ -67,6 +69,34 @@ export function formatLeaderboard(matches: StoredMatch[], elo: EloOptions): stri
     formatSection(`🏆 ${CATEGORY_LABEL[c]} Leaderboard`, computeRatings(byCat.get(c) ?? [], elo)),
   );
   return ["**Halo 3 Customs — ELO Standings**", ...sections].join("\n\n");
+}
+
+/** Per-category rating tables in display order, as the PNG renderer wants them. */
+export function buildBoardSections(matches: StoredMatch[], elo: EloOptions): BoardSection[] {
+  const byCat = groupByCategory(matches);
+  return BOARD_CATEGORIES.map((c) => ({
+    title: `${CATEGORY_LABEL[c].toUpperCase()} LEADERBOARD`,
+    ratings: computeRatings(byCat.get(c) ?? [], elo),
+  }));
+}
+
+/**
+ * The leaderboard PNG, or undefined if rendering fails (callers fall back to
+ * the text table).
+ */
+async function tryRenderLeaderboard(
+  matches: StoredMatch[],
+  elo: EloOptions,
+): Promise<Buffer | undefined> {
+  try {
+    return await renderLeaderboardPng(buildBoardSections(matches, elo));
+  } catch (e) {
+    console.warn(
+      "[discord] leaderboard render failed, falling back to text:",
+      (e as Error).message,
+    );
+    return undefined;
+  }
 }
 
 /** Group matches by leaderboard category (shared by board + per-player stats). */
@@ -292,11 +322,17 @@ function teamName(id: number): string {
 
 // --- webhook plumbing ------------------------------------------------------
 
+/** Multipart body: a payload_json part plus one PNG part, as Discord expects. */
+function imageForm(payload: object, png: Buffer, filename: string): FormData {
+  const form = new FormData();
+  form.append("payload_json", JSON.stringify(payload));
+  form.append("files[0]", new Blob([new Uint8Array(png)], { type: "image/png" }), filename);
+  return form;
+}
+
 /** POST with a PNG attachment (multipart) — used for the carnage image. */
 async function postWebhookImage(url: string, content: string, png: Buffer): Promise<void> {
-  const form = new FormData();
-  form.append("payload_json", JSON.stringify({ content, allowed_mentions: { parse: [] } }));
-  form.append("files[0]", new Blob([new Uint8Array(png)], { type: "image/png" }), "carnage.png");
+  const form = imageForm({ content, allowed_mentions: { parse: [] } }, png, "carnage.png");
   const res = await fetch(url, { method: "POST", body: form });
   if (!res.ok) {
     throw new Error(`Discord webhook ${res.status}: ${await res.text().catch(() => "")}`);
@@ -315,15 +351,24 @@ export async function postWebhook(url: string, content: string): Promise<void> {
   }
 }
 
-/** POST with ?wait=true so Discord returns the created message (incl. id). */
-async function postAndReturnId(url: string, content: string): Promise<string> {
+/**
+ * POST with ?wait=true so Discord returns the created message (incl. id).
+ * With `png` the message is the attachment instead of text content.
+ */
+async function postAndReturnId(url: string, content: string, png?: Buffer): Promise<string> {
   const u = new URL(url);
   u.searchParams.set("wait", "true");
-  const res = await fetch(u, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
-  });
+  const payload = { content, allowed_mentions: { parse: [] } };
+  const res = await fetch(
+    u,
+    png
+      ? { method: "POST", body: imageForm(payload, png, "leaderboard.png") }
+      : {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+  );
   if (!res.ok) {
     throw new Error(`Discord webhook ${res.status}: ${await res.text().catch(() => "")}`);
   }
@@ -342,14 +387,27 @@ async function deleteMessage(url: string, messageId: string): Promise<void> {
 
 /**
  * PATCH an existing webhook message in place. Returns false if it's gone (404)
- * so the caller can recreate it; throws on other errors.
+ * so the caller can recreate it; throws on other errors. With `png` the new
+ * attachment replaces the old one (`attachments: []` drops it either way, so
+ * a text fallback also clears a stale image).
  */
-async function editMessage(url: string, messageId: string, content: string): Promise<boolean> {
-  const res = await fetch(`${url}/messages/${messageId}`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
-  });
+async function editMessage(
+  url: string,
+  messageId: string,
+  content: string,
+  png?: Buffer,
+): Promise<boolean> {
+  const payload = { content, allowed_mentions: { parse: [] }, attachments: [] };
+  const res = await fetch(
+    `${url}/messages/${messageId}`,
+    png
+      ? { method: "PATCH", body: imageForm(payload, png, "leaderboard.png") }
+      : {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+  );
   if (res.status === 404) return false;
   if (!res.ok) {
     throw new Error(`Discord webhook edit ${res.status}: ${await res.text().catch(() => "")}`);
@@ -406,30 +464,34 @@ export async function upsertLeaderboard(
   elo: EloOptions,
 ): Promise<void> {
   if (!url) return;
-  const content = formatLeaderboard(await matchesChrono(db), elo);
+  const matches = await matchesChrono(db);
+  // Primary form is the rendered standings PNG; if rendering fails for any
+  // reason we fall back to the old text table.
+  const png = await tryRenderLeaderboard(matches, elo);
+  const content = png ? "" : formatLeaderboard(matches, elo);
   const key = `lb_msg:${webhookId(url)}`;
   const existing = await kvGet(db, key);
 
   // Happy path: edit the message we already track.
   if (existing) {
-    if (await editMessage(url, existing, content)) return;
+    if (await editMessage(url, existing, content, png)) return;
     // Tracked message is gone (e.g. deleted by hand). Recreate and CAS the id.
-    const replacement = await postAndReturnId(url, content);
+    const replacement = await postAndReturnId(url, content, png);
     if (await kvCas(db, key, existing, replacement)) return;
     // Another instance already replaced it — drop ours, edit the survivor.
     await deleteMessage(url, replacement);
     const winner = await kvGet(db, key);
-    if (winner) await editMessage(url, winner, content);
+    if (winner) await editMessage(url, winner, content, png);
     return;
   }
 
   // No message yet: create one and atomically claim the slot.
-  const created = await postAndReturnId(url, content);
+  const created = await postAndReturnId(url, content, png);
   if (await kvClaim(db, key, created)) return;
   // Lost the create race — delete our duplicate, edit the one that won.
   await deleteMessage(url, created);
   const winner = await kvGet(db, key);
-  if (winner) await editMessage(url, winner, content);
+  if (winner) await editMessage(url, winner, content, png);
 }
 
 // --- slash-command bot (unchanged) -----------------------------------------
@@ -472,7 +534,13 @@ export async function startBot(
     const ix = i as ChatInputCommandInteraction;
     try {
       if (ix.commandName === "leaderboard") {
-        await ix.reply(formatLeaderboard(await matchesChrono(db), elo));
+        const matches = await matchesChrono(db);
+        const png = await tryRenderLeaderboard(matches, elo);
+        if (png) {
+          await ix.reply({ files: [{ attachment: png, name: "leaderboard.png" }] });
+        } else {
+          await ix.reply(formatLeaderboard(matches, elo));
+        }
       } else if (ix.commandName === "stats") {
         const query = ix.options.getString("player");
         if (query) {

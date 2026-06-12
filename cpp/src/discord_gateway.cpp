@@ -25,6 +25,7 @@
 #include "config.h"
 #include "format.h"
 #include "http.h"
+#include "render_leaderboard.h"
 
 using nlohmann::json;
 
@@ -281,25 +282,42 @@ private:
     void handleInteraction(const json& d) {
         if (d.value("type", 0) != 2) return;  // APPLICATION_COMMAND
         std::string name = d.contains("data") ? d["data"].value("name", "") : "";
+        std::string callback =
+            API + "/interactions/" + d.value("id", "") + "/" + d.value("token", "") + "/callback";
+
         std::string content;
+        std::vector<unsigned char> png;
         try {
-            if (name == "leaderboard")
-                content = formatLeaderboard(db_.matchesChrono(), elo_);
-            else if (name == "stats")
+            if (name == "leaderboard") {
+                std::vector<StoredMatch> matches = db_.matchesChrono();
+                // PNG standings like the #leaderboard channel; text on failure.
+                try {
+                    png = renderLeaderboardPng(buildBoardSections(matches, elo_));
+                } catch (const std::exception& e) {
+                    std::cerr << "[discord] leaderboard render failed, falling back to text: "
+                              << e.what() << "\n";
+                }
+                if (png.empty()) content = formatLeaderboard(matches, elo_);
+            } else if (name == "stats") {
                 content = "\xF0\x9F\x93\x8A " + std::to_string(db_.matchCount()) +
                           " tracked Halo 3 custom matches recorded.";
+            }
         } catch (const std::exception& e) {
             std::cerr << "[discord] command error: " << e.what() << "\n";
             content = "Something went wrong.";
         }
-        if (content.empty()) return;
 
+        if (!png.empty()) {
+            json reply = {{"type", 4},
+                          {"data", {{"allowed_mentions", {{"parse", json::array()}}}}}};
+            httpPostMultipart(callback, reply.dump(), "files[0]", "leaderboard.png", "image/png",
+                              png);
+            return;
+        }
+        if (content.empty()) return;
         json reply = {{"type", 4},
                       {"data", {{"content", content}, {"allowed_mentions", {{"parse", json::array()}}}}}};
-        std::string id = d.value("id", "");
-        std::string tok = d.value("token", "");
-        httpRequest("POST", API + "/interactions/" + id + "/" + tok + "/callback",
-                    {"Content-Type: application/json"}, reply.dump());
+        httpRequest("POST", callback, {"Content-Type: application/json"}, reply.dump());
     }
 
     std::string msg_;  // accumulates partial WS frames

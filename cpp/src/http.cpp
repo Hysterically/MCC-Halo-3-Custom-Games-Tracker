@@ -79,7 +79,8 @@ HttpResponse httpRequest(const std::string& method, const std::string& url,
 HttpResponse httpPostMultipart(const std::string& url, const std::string& payloadJson,
                                const std::string& fileField, const std::string& filename,
                                const std::string& mimeType,
-                               const std::vector<unsigned char>& fileData) {
+                               const std::vector<unsigned char>& fileData,
+                               const std::string& method) {
     ensureGlobalInit();
     HttpResponse res;
 
@@ -104,6 +105,8 @@ HttpResponse httpPostMultipart(const std::string& url, const std::string& payloa
     curl_mime_data(part, reinterpret_cast<const char*>(fileData.data()), fileData.size());
 
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
+    // CURLOPT_MIMEPOST implies POST; override the verb for multipart PATCH.
+    if (method != "POST") curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method.c_str());
 
     CURLcode rc = curl_easy_perform(curl);
     if (rc != CURLE_OK) {
