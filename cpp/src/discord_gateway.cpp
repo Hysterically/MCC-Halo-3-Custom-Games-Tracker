@@ -14,15 +14,21 @@
 #include <curl/curl.h>
 #include <curl/websockets.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <iostream>
+#include <regex>
 #include <string>
 #include <thread>
 
 #include <nlohmann/json.hpp>
 
+#include "aliases.h"
+#include "category.h"
 #include "config.h"
+#include "discord_webhook.h"
 #include "format.h"
 #include "http.h"
 #include "render_leaderboard.h"
@@ -36,6 +42,42 @@ const std::string API = "https://discord.com/api/v10";
 long long nowMs() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
+// UTC "YYYY-MM-DD HH:MM" from epoch ms, for the void confirmation.
+std::string isoMinute(long long ms) {
+    std::time_t t = static_cast<std::time_t>(ms / 1000);
+    std::tm tm{};
+    gmtime_s(&tm, &t);
+    char buf[20];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &tm);
+    return buf;
+}
+
+// One-line description of a match for the void confirmation.
+std::string matchSummary(const StoredMatch& m) {
+    std::vector<const StoredPlayer*> ps;
+    for (const auto& p : m.players) ps.push_back(&p);
+    std::sort(ps.begin(), ps.end(), [](const StoredPlayer* a, const StoredPlayer* b) {
+        return a->teamId != b->teamId ? a->teamId < b->teamId : a->standing < b->standing;
+    });
+    std::string roster;
+    for (size_t i = 0; i < ps.size(); ++i) {
+        if (i) roster += ", ";
+        roster += displayName(ps[i]->gamertag);
+    }
+    return "**" + m.gameTypeName + "** (" + categoryLabel(categorize(m)) + ") \xE2\x80\x94 " +
+           roster + " \xE2\x80\x94 played " + isoMinute(m.playedAt) + "Z";
+}
+
+// Pull the trailing message id out of a raw id or a "Copy Message Link" URL.
+std::string extractMessageId(const std::string& raw) {
+    static const std::regex re(R"(\d{5,})");
+    std::string last;
+    for (auto it = std::sregex_iterator(raw.begin(), raw.end(), re); it != std::sregex_iterator();
+         ++it)
+        last = it->str();
+    return last;
 }
 
 class GatewayBot {
@@ -97,7 +139,18 @@ private:
             {{{"name", "leaderboard"}, {"description", "Show the Halo 3 customs ELO leaderboard"},
               {"type", 1}},
              {{"name", "stats"}, {"description", "How many tracked matches are recorded"},
-              {"type", 1}}});
+              {"type", 1}},
+             {{"name", "delete"},
+              {"description",
+               "Void a game so it stops counting \xE2\x80\x94 give its #game-results message id"},
+              {"type", 1},
+              // ManageGuild (0x20) — admins/owner only. Configurable in Server Settings.
+              {"default_member_permissions", "32"},
+              {"options",
+               json::array({{{"name", "game"},
+                             {"description", "The #game-results message id (or its link)"},
+                             {"type", 3},
+                             {"required", true}}})}}});
         std::string path = config().discordGuildId
                                ? "/applications/" + appId_ + "/guilds/" +
                                      *config().discordGuildId + "/commands"
@@ -279,6 +332,43 @@ private:
         }
     }
 
+    // Void a game referenced by its #game-results message: drop it from the DB
+    // (ELO/leaderboard recompute from history), delete the original post, and
+    // refresh the live leaderboard. Returns the public reply text. Gated to
+    // Manage Server at registration.
+    std::string handleDelete(const json& d) {
+        std::string raw;
+        if (d.contains("data") && d["data"].contains("options"))
+            for (const auto& o : d["data"]["options"])
+                if (o.value("name", "") == "game") raw = o.value("value", "");
+        std::string msgId = extractMessageId(raw);
+        if (msgId.empty()) return "That doesn't look like a message id or link.";
+
+        std::optional<std::string> matchId = db_.matchIdByResultsMsg(msgId);
+        if (!matchId)
+            return "No tracked game found for that post \xE2\x80\x94 it may predate message "
+                   "tracking. Use the `remove-match` CLI on the host for older games.";
+
+        std::string summary = "match `" + *matchId + "`";
+        for (const auto& m : db_.matchesChrono())
+            if (m.matchId == *matchId) {
+                summary = matchSummary(m);
+                break;
+            }
+
+        db_.deleteMatch(*matchId);
+        if (config().discordResultsWebhookUrl)
+            deleteWebhookMessage(*config().discordResultsWebhookUrl, msgId);
+        try {
+            upsertLeaderboard(config().discordLeaderboardWebhookUrl, db_, elo_);
+        } catch (const std::exception& e) {
+            std::cerr << "[discord] leaderboard refresh after delete failed: " << e.what() << "\n";
+        }
+
+        return "\xF0\x9F\x97\x91\xEF\xB8\x8F Voided " + summary + ". " +
+               std::to_string(db_.matchCount()) + " matches remain.";
+    }
+
     void handleInteraction(const json& d) {
         if (d.value("type", 0) != 2) return;  // APPLICATION_COMMAND
         std::string name = d.contains("data") ? d["data"].value("name", "") : "";
@@ -301,6 +391,8 @@ private:
             } else if (name == "stats") {
                 content = "\xF0\x9F\x93\x8A " + std::to_string(db_.matchCount()) +
                           " tracked Halo 3 custom matches recorded.";
+            } else if (name == "delete") {
+                content = handleDelete(d);
             }
         } catch (const std::exception& e) {
             std::cerr << "[discord] command error: " << e.what() << "\n";

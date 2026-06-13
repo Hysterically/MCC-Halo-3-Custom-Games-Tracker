@@ -125,6 +125,10 @@ DbSqlite::DbSqlite(const std::string& path) {
     // Pre-duration databases: add the column; old rows stay NULL (= always count).
     sqlite3_exec(db_, "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER", nullptr, nullptr,
                  nullptr);
+    // Discord #game-results message id, captured at post time so a match can be
+    // voided by referencing its post. NULL on rows posted before this existed.
+    sqlite3_exec(db_, "ALTER TABLE matches ADD COLUMN results_msg_id TEXT", nullptr, nullptr,
+                 nullptr);
 }
 
 DbSqlite::~DbSqlite() {
@@ -283,6 +287,28 @@ std::unordered_map<std::string, std::string> DbSqlite::displayNames() {
 long long DbSqlite::matchCount() {
     Stmt s(db_, "SELECT COUNT(*) AS n FROM matches");
     return s.step() ? s.i64(0) : 0;
+}
+
+void DbSqlite::setMatchResultsMsg(const std::string& matchId, const std::string& msgId) {
+    std::lock_guard<std::mutex> lk(writeMtx_);
+    Stmt s(db_, "UPDATE matches SET results_msg_id = ? WHERE match_id = ?");
+    s.bind({msgId, matchId});
+    s.step();
+}
+
+std::optional<std::string> DbSqlite::matchIdByResultsMsg(const std::string& msgId) {
+    Stmt s(db_, "SELECT match_id FROM matches WHERE results_msg_id = ?");
+    s.bind({msgId});
+    if (s.step()) return s.text(0);
+    return std::nullopt;
+}
+
+long long DbSqlite::deleteMatch(const std::string& matchId) {
+    std::lock_guard<std::mutex> lk(writeMtx_);
+    Stmt s(db_, "DELETE FROM matches WHERE match_id = ?");
+    s.bind({matchId});
+    s.step();
+    return sqlite3_changes(db_);
 }
 
 void DbSqlite::clearAll() {

@@ -25,6 +25,9 @@ public:
     std::vector<StoredMatch> matchesChrono() override;
     std::unordered_map<std::string, std::string> displayNames() override;
     long long matchCount() override;
+    void setMatchResultsMsg(const std::string& matchId, const std::string& msgId) override;
+    std::optional<std::string> matchIdByResultsMsg(const std::string& msgId) override;
+    long long deleteMatch(const std::string& matchId) override;
     void clearAll() override;
 
 private:

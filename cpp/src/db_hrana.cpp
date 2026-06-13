@@ -249,6 +249,29 @@ public:
         return rows.empty() ? 0 : cellInt(rows[0][0]);
     }
 
+    void setMatchResultsMsg(const std::string& matchId, const std::string& msgId) override {
+        std::lock_guard<std::mutex> lk(writeMtx_);
+        run({execReq("UPDATE matches SET results_msg_id = ? WHERE match_id = ?",
+                     {vText(msgId), vText(matchId)}),
+             closeReq()});
+    }
+
+    std::optional<std::string> matchIdByResultsMsg(const std::string& msgId) override {
+        auto res = run({execReq("SELECT match_id FROM matches WHERE results_msg_id = ?",
+                                {vText(msgId)}, true),
+                        closeReq()});
+        const json& rows = res[0]["rows"];
+        if (rows.empty()) return std::nullopt;
+        return cellText(rows[0][0]);
+    }
+
+    long long deleteMatch(const std::string& matchId) override {
+        std::lock_guard<std::mutex> lk(writeMtx_);
+        auto res = run({execReq("DELETE FROM matches WHERE match_id = ?", {vText(matchId)}),
+                        closeReq()});
+        return affectedOf(res[0]);
+    }
+
     void clearAll() override {
         std::lock_guard<std::mutex> lk(writeMtx_);
         run({execReq("BEGIN"), execReq("DELETE FROM match_players"), execReq("DELETE FROM matches"),
@@ -280,7 +303,8 @@ private:
         // means the migration already ran.
         for (const char* sql : {"ALTER TABLE matches ADD COLUMN map_name TEXT",
                                 "ALTER TABLE matches ADD COLUMN map_variant TEXT",
-                                "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER"}) {
+                                "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER",
+                                "ALTER TABLE matches ADD COLUMN results_msg_id TEXT"}) {
             try {
                 run({execReq(sql), closeReq()});
             } catch (...) {
