@@ -151,14 +151,14 @@ std::map<std::string, EloChange> matchEloChanges(const std::vector<StoredMatch>&
     }
     if (idx == matches.size()) return changes;
     const StoredMatch& match = matches[idx];
-    Category cat = categorize(match);
+    Category cat = boardCategory(match);
     if (cat == Category::Other) return changes;
 
     // Replay the match's category up to and including it, and diff against the
     // replay that stops just before it.
     std::vector<StoredMatch> hist;
     for (size_t i = 0; i <= idx; ++i)
-        if (categorize(matches[i]) == cat) hist.push_back(matches[i]);
+        if (boardCategory(matches[i]) == cat) hist.push_back(matches[i]);
     std::vector<StoredMatch> prior(hist.begin(), hist.end() - 1);
 
     std::unordered_map<std::string, double> before, after;

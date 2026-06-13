@@ -157,7 +157,7 @@ std::string upperAscii(std::string s) {
 std::vector<BoardSection> buildBoardSections(const std::vector<StoredMatch>& matches,
                                              EloOptions elo) {
     std::map<int, std::vector<StoredMatch>> byCat;  // key = Category as int
-    for (const auto& m : matches) byCat[static_cast<int>(categorize(m))].push_back(m);
+    for (const auto& m : matches) byCat[static_cast<int>(boardCategory(m))].push_back(m);
 
     std::vector<BoardSection> sections;
     for (Category c : BOARD_CATEGORIES) {

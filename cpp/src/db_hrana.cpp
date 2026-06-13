@@ -156,13 +156,14 @@ public:
             {
                 execReq("BEGIN"),
                 execReq("INSERT INTO matches (match_id, game_type, teams_enabled, played_at, "
-                        "winning_team_id, recorded_at, map_name, map_variant) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                        "winning_team_id, recorded_at, map_name, map_variant, duration_seconds) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                         "ON CONFLICT(match_id) DO NOTHING",
                         {vText(r.matchId), vText(r.gameTypeName), vInt(r.teamsEnabled ? 1 : 0),
                          vInt(playedAt), vOptInt(r.winningTeamId), vInt(now),
                          r.mapName.empty() ? vNull() : vText(r.mapName),
-                         r.mapVariant.empty() ? vNull() : vText(r.mapVariant)}),
+                         r.mapVariant.empty() ? vNull() : vText(r.mapVariant),
+                         r.durationSeconds.has_value() ? vInt(*r.durationSeconds) : vNull()}),
             },
             baton, /*close=*/false);
 
@@ -196,7 +197,7 @@ public:
                                 "deaths, assists FROM match_players",
                                 {}, true),
                         execReq("SELECT match_id, game_type, teams_enabled, played_at, "
-                                "winning_team_id, map_name, map_variant "
+                                "winning_team_id, map_name, map_variant, duration_seconds "
                                 "FROM matches ORDER BY played_at ASC, "
                                 "recorded_at ASC",
                                 {}, true),
@@ -227,6 +228,7 @@ public:
             if (!cellNull(row[4])) m.winningTeamId = static_cast<int>(cellInt(row[4]));
             if (!cellNull(row[5])) m.mapName = cellText(row[5]);
             if (!cellNull(row[6])) m.mapVariant = cellText(row[6]);
+            if (!cellNull(row[7])) m.durationSeconds = cellInt(row[7]);
             auto it = byMatch.find(m.matchId);
             if (it != byMatch.end()) m.players = it->second;
             out.push_back(std::move(m));
@@ -265,7 +267,7 @@ private:
              execReq("CREATE TABLE IF NOT EXISTS matches (match_id TEXT PRIMARY KEY, game_type TEXT "
                      "NOT NULL, teams_enabled INTEGER NOT NULL, played_at INTEGER NOT NULL, "
                      "winning_team_id INTEGER, recorded_at INTEGER NOT NULL, map_name TEXT, "
-                     "map_variant TEXT)"),
+                     "map_variant TEXT, duration_seconds INTEGER)"),
              execReq("CREATE TABLE IF NOT EXISTS match_players (match_id TEXT NOT NULL REFERENCES "
                      "matches(match_id) ON DELETE CASCADE, xuid TEXT NOT NULL, gamertag TEXT NOT "
                      "NULL, team_id INTEGER NOT NULL, standing INTEGER NOT NULL, score INTEGER NOT "
@@ -277,7 +279,8 @@ private:
         // Migrate pre-map databases in place; a "duplicate column" error just
         // means the migration already ran.
         for (const char* sql : {"ALTER TABLE matches ADD COLUMN map_name TEXT",
-                                "ALTER TABLE matches ADD COLUMN map_variant TEXT"}) {
+                                "ALTER TABLE matches ADD COLUMN map_variant TEXT",
+                                "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER"}) {
             try {
                 run({execReq(sql), closeReq()});
             } catch (...) {

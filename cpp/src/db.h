@@ -32,6 +32,7 @@ struct StoredMatch {
     std::optional<int> winningTeamId;
     std::string mapName;     // "" if unknown
     std::string mapVariant;  // "" if unknown
+    std::optional<long long> durationSeconds;  // empty on pre-tracking rows (= always count)
     std::vector<StoredPlayer> players;
 };
 

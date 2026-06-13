@@ -46,6 +46,8 @@ export interface CarnageReport {
   /** Map variant name (e.g. "MLG CStruct TS8") — attached from mapInfo.ts. */
   mapVariant?: string;
   players: CarnagePlayer[];
+  /** Longest secondsPlayed across players ≈ how long the game ran. */
+  durationSeconds?: number;
   /** Winning team id, or null for FFA / undecided. */
   winningTeamId: number | null;
   /** Gamertags credited with the win. */
@@ -107,6 +109,7 @@ export function parseCarnageXml(xml: string, playedAt = new Date()): CarnageRepo
     hopperName: String(root.HopperName?.["@_HopperName"] ?? ""),
     playedAt,
     players,
+    durationSeconds: players.reduce((s, p) => Math.max(s, p.secondsPlayed), 0),
     winningTeamId,
     winners,
     tracked: isHalo3 && isCustom && completed && players.length > 0,

@@ -160,6 +160,7 @@ function toReport(m: StoredMatch): CarnageReport {
     playedAt: new Date(m.playedAt),
     mapName: m.mapName,
     mapVariant: m.mapVariant,
+    durationSeconds: m.durationSeconds,
     players: m.players.map((p) => ({
       ...p,
       betrayals: 0,

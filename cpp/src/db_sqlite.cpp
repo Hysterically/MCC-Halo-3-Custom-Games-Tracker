@@ -102,7 +102,8 @@ DbSqlite::DbSqlite(const std::string& path) {
                 "  winning_team_id INTEGER,"
                 "  recorded_at INTEGER NOT NULL,"
                 "  map_name TEXT,"
-                "  map_variant TEXT)");
+                "  map_variant TEXT,"
+                "  duration_seconds INTEGER)");
     execOrThrow(db_,
                 "CREATE TABLE IF NOT EXISTS match_players ("
                 "  match_id TEXT NOT NULL REFERENCES matches(match_id) ON DELETE CASCADE,"
@@ -121,6 +122,9 @@ DbSqlite::DbSqlite(const std::string& path) {
     // Migrate pre-map databases in place; "duplicate column" just means done.
     sqlite3_exec(db_, "ALTER TABLE matches ADD COLUMN map_name TEXT", nullptr, nullptr, nullptr);
     sqlite3_exec(db_, "ALTER TABLE matches ADD COLUMN map_variant TEXT", nullptr, nullptr, nullptr);
+    // Pre-duration databases: add the column; old rows stay NULL (= always count).
+    sqlite3_exec(db_, "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER", nullptr, nullptr,
+                 nullptr);
 }
 
 DbSqlite::~DbSqlite() {
@@ -180,16 +184,17 @@ bool DbSqlite::recordMatch(const CarnageReport& r) {
         {
             Stmt s(db_,
                    "INSERT INTO matches (match_id, game_type, teams_enabled, played_at, "
-                   "winning_team_id, recorded_at, map_name, map_variant) "
-                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                   "winning_team_id, recorded_at, map_name, map_variant, duration_seconds) "
+                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
                    "ON CONFLICT(match_id) DO NOTHING");
             Arg winning = r.winningTeamId.has_value()
                               ? Arg(static_cast<long long>(*r.winningTeamId))
                               : Arg(nullptr);
             Arg mapName = r.mapName.empty() ? Arg(nullptr) : Arg(r.mapName);
             Arg mapVariant = r.mapVariant.empty() ? Arg(nullptr) : Arg(r.mapVariant);
+            Arg duration = r.durationSeconds.has_value() ? Arg(*r.durationSeconds) : Arg(nullptr);
             s.bind({r.matchId, r.gameTypeName, static_cast<long long>(r.teamsEnabled ? 1 : 0),
-                    playedAt, winning, now, mapName, mapVariant});
+                    playedAt, winning, now, mapName, mapVariant, duration});
             s.step();
         }
         if (sqlite3_changes(db_) == 0) {
@@ -249,7 +254,7 @@ std::vector<StoredMatch> DbSqlite::matchesChrono() {
     std::vector<StoredMatch> out;
     Stmt s(db_,
            "SELECT match_id, game_type, teams_enabled, played_at, winning_team_id, "
-           "map_name, map_variant "
+           "map_name, map_variant, duration_seconds "
            "FROM matches ORDER BY played_at ASC, recorded_at ASC");
     while (s.step()) {
         StoredMatch m;
@@ -260,6 +265,7 @@ std::vector<StoredMatch> DbSqlite::matchesChrono() {
         if (!s.isNull(4)) m.winningTeamId = static_cast<int>(s.i64(4));
         m.mapName = s.text(5);
         m.mapVariant = s.text(6);
+        if (!s.isNull(7)) m.durationSeconds = s.i64(7);
         auto it = byMatch.find(m.matchId);
         if (it != byMatch.end()) m.players = it->second;
         out.push_back(std::move(m));

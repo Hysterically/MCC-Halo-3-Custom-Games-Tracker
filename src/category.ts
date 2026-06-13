@@ -24,10 +24,35 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 /** Categories that get a leaderboard section, in display order. */
 export const BOARD_CATEGORIES: Category[] = ["2v2", "4v4", "ffa"];
 
+/**
+ * A game shorter than this (in seconds) didn't really happen — it was set up
+ * and ended/aborted before a result (e.g. a 0-0 "no-contest" that lands as a
+ * tie). Such games are still recorded and posted, but kept off every
+ * leaderboard. Duration = the longest any player was in the game; matches
+ * recorded before duration tracking existed have no duration and always count.
+ */
+export const MIN_LEADERBOARD_SECONDS = 60;
+
 /** Structural shape both CarnageReport and StoredMatch satisfy. */
 interface CategorisableMatch {
   teamsEnabled: boolean;
   players: { teamId: number; xuid: string }[];
+  /** Longest secondsPlayed across players; undefined if not tracked. */
+  durationSeconds?: number;
+}
+
+/**
+ * Leaderboard classification: the structural {@link categorize}, except a game
+ * shorter than `minSeconds` is forced to "other" so aborted / no-contest games
+ * never reach a board. This is the categorizer every board and per-player stat
+ * goes through; {@link categorize} stays the pure structural one.
+ */
+export function boardCategory(
+  m: CategorisableMatch,
+  minSeconds = MIN_LEADERBOARD_SECONDS,
+): Category {
+  if (m.durationSeconds != null && m.durationSeconds < minSeconds) return "other";
+  return categorize(m);
 }
 
 export function categorize(m: CategorisableMatch): Category {
