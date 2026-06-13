@@ -101,7 +101,7 @@ std::string formatEloLine(const CarnageReport& r, const std::map<std::string, El
 
 std::string formatLeaderboard(const std::vector<StoredMatch>& matches, EloOptions elo) {
     std::map<int, std::vector<StoredMatch>> byCat;  // key = Category as int
-    for (const auto& m : matches) byCat[static_cast<int>(categorize(m))].push_back(m);
+    for (const auto& m : matches) byCat[static_cast<int>(boardCategory(m))].push_back(m);
 
     std::vector<std::string> parts = {"**Halo 3 Customs " + std::string(EMDASH) +
                                       " ELO Standings**"};
@@ -115,7 +115,7 @@ std::string formatLeaderboard(const std::vector<StoredMatch>& matches, EloOption
 }
 
 std::string formatMatchCaption(const CarnageReport& r) {
-    Category cat = categorize(r);
+    Category cat = boardCategory(r);
     std::string tag = cat == Category::Other
                           ? std::string("_Off-format ") + EMDASH + " not counted toward a leaderboard._"
                           : std::string("_Counted toward **") + categoryLabel(cat) +
@@ -128,7 +128,7 @@ std::string formatMatchCaption(const CarnageReport& r) {
 
 std::string formatMatchResult(const CarnageReport& r,
                               const std::map<std::string, EloChange>* eloChanges) {
-    Category cat = categorize(r);
+    Category cat = boardCategory(r);
     std::string tag = cat == Category::Other
                           ? std::string("_Off-format ") + EMDASH + " not counted toward a leaderboard._"
                           : std::string("_Counted toward **") + categoryLabel(cat) +

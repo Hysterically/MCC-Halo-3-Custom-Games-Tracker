@@ -33,6 +33,7 @@ export interface StoredMatch {
   winningTeamId: number | null;
   mapName?: string;
   mapVariant?: string;
+  durationSeconds?: number; // longest secondsPlayed; undefined on pre-tracking rows
   players: {
     xuid: string;
     gamertag: string;
@@ -99,7 +100,8 @@ export async function openDb(url: string, authToken?: string): Promise<DB> {
          winning_team_id INTEGER,
          recorded_at     INTEGER NOT NULL,
          map_name        TEXT,
-         map_variant     TEXT
+         map_variant     TEXT,
+         duration_seconds INTEGER
        )`,
       `CREATE TABLE IF NOT EXISTS match_players (
          match_id  TEXT NOT NULL REFERENCES matches(match_id) ON DELETE CASCADE,
@@ -126,6 +128,8 @@ export async function openDb(url: string, authToken?: string): Promise<DB> {
   for (const col of ["map_name", "map_variant"]) {
     await db.execute(`ALTER TABLE matches ADD COLUMN ${col} TEXT`).catch(() => {});
   }
+  // Pre-duration databases: add the column; old rows stay NULL (= always count).
+  await db.execute("ALTER TABLE matches ADD COLUMN duration_seconds INTEGER").catch(() => {});
 
   return db;
 }
@@ -205,8 +209,8 @@ async function recordMatchTx(db: DB, r: CarnageReport): Promise<boolean> {
     const claim = await tx.execute({
       sql: `INSERT INTO matches
               (match_id, game_type, teams_enabled, played_at, winning_team_id, recorded_at,
-               map_name, map_variant)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               map_name, map_variant, duration_seconds)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(match_id) DO NOTHING`,
       args: [
         r.matchId,
@@ -217,6 +221,7 @@ async function recordMatchTx(db: DB, r: CarnageReport): Promise<boolean> {
         now,
         r.mapName ?? null,
         r.mapVariant ?? null,
+        r.durationSeconds ?? null,
       ],
     });
 
@@ -253,7 +258,8 @@ async function recordMatchTx(db: DB, r: CarnageReport): Promise<boolean> {
 export async function matchesChrono(db: DB): Promise<StoredMatch[]> {
   // Two bulk queries (not N+1) keep this cheap over a remote DB.
   const matchesRes = await db.execute(
-    `SELECT match_id, game_type, teams_enabled, played_at, winning_team_id, map_name, map_variant
+    `SELECT match_id, game_type, teams_enabled, played_at, winning_team_id, map_name, map_variant,
+            duration_seconds
        FROM matches ORDER BY played_at ASC, recorded_at ASC`,
   );
   const playersRes = await db.execute(
@@ -286,6 +292,7 @@ export async function matchesChrono(db: DB): Promise<StoredMatch[]> {
     winningTeamId: m.winning_team_id == null ? null : num(m.winning_team_id),
     mapName: m.map_name == null ? undefined : String(m.map_name),
     mapVariant: m.map_variant == null ? undefined : String(m.map_variant),
+    durationSeconds: m.duration_seconds == null ? undefined : num(m.duration_seconds),
     players: byMatch.get(String(m.match_id)) ?? [],
   }));
 }

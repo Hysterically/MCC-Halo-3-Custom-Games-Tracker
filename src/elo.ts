@@ -12,7 +12,7 @@
  */
 
 import type { StoredMatch } from "./db.ts";
-import { categorize } from "./category.ts";
+import { boardCategory } from "./category.ts";
 
 export interface Rating {
   xuid: string;
@@ -147,10 +147,10 @@ export function matchEloChanges(
   const idx = matches.findIndex((m) => m.matchId === matchId);
   if (idx === -1) return null;
   const match = matches[idx];
-  const cat = categorize(match);
+  const cat = boardCategory(match);
   if (cat === "other") return null;
 
-  const hist = matches.slice(0, idx + 1).filter((m) => categorize(m) === cat);
+  const hist = matches.slice(0, idx + 1).filter((m) => boardCategory(m) === cat);
   const before = new Map(
     computeRatings(hist.slice(0, -1), opt).map((r) => [r.xuid, r.rating]),
   );

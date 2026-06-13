@@ -38,7 +38,8 @@ struct CarnageReport {
     std::string mapName;       // base map (e.g. "Construct") — attached from mapinfo
     std::string mapVariant;    // variant name (e.g. "MLG CStruct TS8") — attached from mapinfo
     std::vector<CarnagePlayer> players;
-    std::optional<int> winningTeamId;  // empty for FFA / undecided
+    std::optional<long long> durationSeconds;  // longest secondsPlayed; ≈ game length
+    std::optional<int> winningTeamId;          // empty for FFA / undecided
     std::vector<std::string> winners;  // gamertags credited with the win
     bool tracked = false;              // Halo 3 custom that completed
 };

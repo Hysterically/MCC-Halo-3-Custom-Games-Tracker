@@ -137,6 +137,10 @@ CarnageReport parseCarnageXml(const std::string& xml, long long playedAtMs) {
 
     WinnerResult w = decideWinner(r.players, teamsEnabled);
 
+    long long durationSeconds = 0;
+    for (const auto& p : r.players) durationSeconds = std::max(durationSeconds, p.secondsPlayed);
+    r.durationSeconds = durationSeconds;
+
     r.matchId = attr(root, "GameUniqueId", "GameUniqueId");
     r.gameEnum = gameEnum;
     r.isHalo3 = gameEnum == GAME_HALO3;

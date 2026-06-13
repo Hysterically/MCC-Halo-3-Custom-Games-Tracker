@@ -25,7 +25,7 @@ import type { DB, StoredMatch } from "./db.ts";
 import { matchCount, matchesChrono, kvGet, kvClaim, kvCas } from "./db.ts";
 import { computeRatings, type EloChange, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
-import { categorize, CATEGORY_LABEL, BOARD_CATEGORIES, type Category } from "./category.ts";
+import { boardCategory, CATEGORY_LABEL, BOARD_CATEGORIES, type Category } from "./category.ts";
 import { displayName } from "./aliases.ts";
 import { renderCarnagePng } from "./renderCarnage.ts";
 import { renderLeaderboardPng, type BoardSection } from "./renderLeaderboard.ts";
@@ -103,7 +103,7 @@ async function tryRenderLeaderboard(
 function groupByCategory(matches: StoredMatch[]): Map<Category, StoredMatch[]> {
   const byCat = new Map<Category, StoredMatch[]>();
   for (const m of matches) {
-    const cat = categorize(m);
+    const cat = boardCategory(m);
     const arr = byCat.get(cat) ?? [];
     arr.push(m);
     byCat.set(cat, arr);
@@ -217,7 +217,7 @@ export function formatPlayerStats(
 
 /** Short caption posted above the rendered carnage image. */
 export function formatMatchCaption(r: CarnageReport): string {
-  const cat = categorize(r);
+  const cat = boardCategory(r);
   const tag =
     cat === "other"
       ? "_Off-format — not counted toward a leaderboard._"
@@ -248,7 +248,7 @@ function formatEloLine(r: CarnageReport, changes?: Map<string, EloChange>): stri
 
 /** Detailed per-match summary: gametype, teams or FFA, K/D/A, winner. */
 export function formatMatchResult(r: CarnageReport, eloChanges?: Map<string, EloChange>): string {
-  const cat = categorize(r);
+  const cat = boardCategory(r);
   const tag =
     cat === "other"
       ? "_Off-format — not counted toward a leaderboard._"

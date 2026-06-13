@@ -26,6 +26,12 @@ inline const char* categoryLabel(Category c) {
 inline constexpr std::array<Category, 3> BOARD_CATEGORIES = {
     Category::TwoV2, Category::FourV4, Category::FFA};
 
+// A game shorter than this (seconds) didn't really happen — it was ended/aborted
+// before a result (e.g. a 0-0 no-contest that lands as a tie). Such games are
+// still recorded and posted, but kept off every leaderboard. Mirrors
+// MIN_LEADERBOARD_SECONDS in src/category.ts.
+inline constexpr long long MIN_LEADERBOARD_SECONDS = 60;
+
 // Works for any match-like type exposing `.teamsEnabled` and `.players` whose
 // elements have `.teamId` and `.xuid` (CarnageReport and StoredMatch both do).
 template <class M>
@@ -50,4 +56,15 @@ Category categorize(const M& m) {
     if (counts[0] == 2) return Category::TwoV2;
     if (counts[0] == 3 || counts[0] == 4) return Category::FourV4;
     return Category::Other;
+}
+
+// Leaderboard classification: structural categorize(), except a game shorter
+// than minSeconds is forced to Other so aborted / no-contest games never reach a
+// board. The categorizer every board and per-match tag goes through; categorize()
+// stays the pure structural one. Works for CarnageReport and StoredMatch (both
+// expose an optional `.durationSeconds`). Mirrors boardCategory in src/category.ts.
+template <class M>
+Category boardCategory(const M& m, long long minSeconds = MIN_LEADERBOARD_SECONDS) {
+    if (m.durationSeconds.has_value() && *m.durationSeconds < minSeconds) return Category::Other;
+    return categorize(m);
 }
