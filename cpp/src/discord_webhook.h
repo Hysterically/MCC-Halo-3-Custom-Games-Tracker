@@ -16,9 +16,13 @@ void postWebhook(const std::string& url, const std::string& content);
 
 // Post a per-match summary to the results channel (no-op if no URL).
 // `eloChanges` (xuid -> post-match rating + change, nullable) shows per-player
-// ELO ratings in the scoreboard.
-void postMatchResult(const std::optional<std::string>& url, const CarnageReport& report,
-                     const std::map<std::string, EloChange>* eloChanges = nullptr);
+// ELO ratings in the scoreboard. Returns the created Discord message id (empty
+// on no-op) so the match can later be voided by referencing its post.
+std::string postMatchResult(const std::optional<std::string>& url, const CarnageReport& report,
+                            const std::map<std::string, EloChange>* eloChanges = nullptr);
+
+// DELETE an existing webhook message. Best-effort.
+void deleteWebhookMessage(const std::string& url, const std::string& messageId);
 
 // Refresh the live leaderboard by editing a single persistent message in place.
 // The message id is held in the shared DB (kv lb_msg:<webhook>) so every

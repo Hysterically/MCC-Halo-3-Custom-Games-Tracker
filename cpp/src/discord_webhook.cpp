@@ -89,11 +89,16 @@ void postWebhook(const std::string& url, const std::string& content) {
         throw std::runtime_error("Discord webhook " + std::to_string(r.status) + ": " + r.body);
 }
 
+void deleteWebhookMessage(const std::string& url, const std::string& messageId) {
+    deleteMessage(url, messageId);
+}
+
 // Primary form is the rendered carnage-screen PNG with a short caption; if
-// rendering fails for any reason we fall back to the old text table.
-void postMatchResult(const std::optional<std::string>& url, const CarnageReport& report,
-                     const std::map<std::string, EloChange>* eloChanges) {
-    if (!url) return;
+// rendering fails for any reason we fall back to the old text table. ?wait=true
+// so we capture the created message id — the handle /delete uses to void a game.
+std::string postMatchResult(const std::optional<std::string>& url, const CarnageReport& report,
+                            const std::map<std::string, EloChange>* eloChanges) {
+    if (!url) return "";
 
     std::vector<unsigned char> png;
     try {
@@ -101,16 +106,14 @@ void postMatchResult(const std::optional<std::string>& url, const CarnageReport&
     } catch (const std::exception& e) {
         std::cerr << "[discord] carnage render failed, falling back to text: " << e.what() << "\n";
     }
-    if (png.empty()) {
-        postWebhook(*url, formatMatchResult(report, eloChanges));
-        return;
-    }
+    if (png.empty()) return postAndReturnId(*url, formatMatchResult(report, eloChanges));
 
-    HttpResponse r = httpPostMultipart(*url, messageBody(formatMatchCaption(report)), "files[0]",
-                                       "carnage.png", "image/png", png);
+    HttpResponse r = httpPostMultipart(withWait(*url), messageBody(formatMatchCaption(report)),
+                                       "files[0]", "carnage.png", "image/png", png);
     if (r.networkError) throw std::runtime_error("Discord webhook POST: " + r.error);
     if (!r.ok())
         throw std::runtime_error("Discord webhook " + std::to_string(r.status) + ": " + r.body);
+    return json::parse(r.body).at("id").get<std::string>();
 }
 
 void upsertLeaderboard(const std::optional<std::string>& url, Db& db, EloOptions elo) {

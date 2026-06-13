@@ -16,16 +16,31 @@
 import {
   Client,
   GatewayIntentBits,
+  PermissionFlagsBits,
   REST,
   Routes,
   SlashCommandBuilder,
   type ChatInputCommandInteraction,
 } from "discord.js";
 import type { DB, StoredMatch } from "./db.ts";
-import { matchCount, matchesChrono, kvGet, kvClaim, kvCas } from "./db.ts";
+import {
+  matchCount,
+  matchesChrono,
+  matchIdByResultsMsg,
+  deleteMatch,
+  kvGet,
+  kvClaim,
+  kvCas,
+} from "./db.ts";
 import { computeRatings, type EloChange, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
-import { boardCategory, CATEGORY_LABEL, BOARD_CATEGORIES, type Category } from "./category.ts";
+import {
+  boardCategory,
+  categorize,
+  CATEGORY_LABEL,
+  BOARD_CATEGORIES,
+  type Category,
+} from "./category.ts";
 import { displayName } from "./aliases.ts";
 import { renderCarnagePng } from "./renderCarnage.ts";
 import { renderLeaderboardPng, type BoardSection } from "./renderLeaderboard.ts";
@@ -330,15 +345,6 @@ function imageForm(payload: object, png: Buffer, filename: string): FormData {
   return form;
 }
 
-/** POST with a PNG attachment (multipart) — used for the carnage image. */
-async function postWebhookImage(url: string, content: string, png: Buffer): Promise<void> {
-  const form = imageForm({ content, allowed_mentions: { parse: [] } }, png, "carnage.png");
-  const res = await fetch(url, { method: "POST", body: form });
-  if (!res.ok) {
-    throw new Error(`Discord webhook ${res.status}: ${await res.text().catch(() => "")}`);
-  }
-}
-
 /** Plain POST — fire and forget, no message id returned. */
 export async function postWebhook(url: string, content: string): Promise<void> {
   const res = await fetch(url, {
@@ -355,14 +361,19 @@ export async function postWebhook(url: string, content: string): Promise<void> {
  * POST with ?wait=true so Discord returns the created message (incl. id).
  * With `png` the message is the attachment instead of text content.
  */
-async function postAndReturnId(url: string, content: string, png?: Buffer): Promise<string> {
+async function postAndReturnId(
+  url: string,
+  content: string,
+  png?: Buffer,
+  filename = "leaderboard.png",
+): Promise<string> {
   const u = new URL(url);
   u.searchParams.set("wait", "true");
   const payload = { content, allowed_mentions: { parse: [] } };
   const res = await fetch(
     u,
     png
-      ? { method: "POST", body: imageForm(payload, png, "leaderboard.png") }
+      ? { method: "POST", body: imageForm(payload, png, filename) }
       : {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -432,19 +443,19 @@ export async function postMatchResult(
   url: string | undefined,
   report: CarnageReport,
   eloChanges?: Map<string, EloChange>,
-): Promise<void> {
-  if (!url) return;
+): Promise<string | undefined> {
+  if (!url) return undefined;
   let png: Buffer | undefined;
   try {
     png = renderCarnagePng(report, eloChanges);
   } catch (e) {
     console.warn("[discord] carnage render failed, falling back to text:", (e as Error).message);
   }
-  if (png) {
-    await postWebhookImage(url, formatMatchCaption(report), png);
-  } else {
-    await postWebhook(url, formatMatchResult(report, eloChanges));
-  }
+  // ?wait=true so we capture the created message id — that's the handle the
+  // `/delete` command uses to void a game from Discord later.
+  return png
+    ? postAndReturnId(url, formatMatchCaption(report), png, "carnage.png")
+    : postAndReturnId(url, formatMatchResult(report, eloChanges));
 }
 
 /**
@@ -494,7 +505,23 @@ export async function upsertLeaderboard(
   if (winner) await editMessage(url, winner, content, png);
 }
 
-// --- slash-command bot (unchanged) -----------------------------------------
+// --- slash-command bot ------------------------------------------------------
+
+/** One-line description of a match for the void confirmation / lookup. */
+function matchSummary(m: StoredMatch): string {
+  const when = new Date(m.playedAt).toISOString().slice(0, 16).replace("T", " ");
+  const roster = [...m.players]
+    .sort((a, b) => a.teamId - b.teamId || a.standing - b.standing)
+    .map((p) => displayName(p.gamertag))
+    .join(", ");
+  return `**${m.gameTypeName}** (${categorize(m)}) — ${roster} — played ${when}Z`;
+}
+
+/** Pull the trailing message id out of a raw id or a "Copy Message Link" URL. */
+function extractMessageId(raw: string): string | undefined {
+  const ids = raw.match(/\d{5,}/g);
+  return ids ? ids[ids.length - 1] : undefined;
+}
 
 const COMMANDS = [
   new SlashCommandBuilder()
@@ -509,6 +536,16 @@ const COMMANDS = [
         .setDescription("Gamertag or display name (partial works)")
         .setRequired(false),
     ),
+  new SlashCommandBuilder()
+    .setName("delete")
+    .setDescription("Void a game so it stops counting — give its #game-results message id or link")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addStringOption((o) =>
+      o
+        .setName("game")
+        .setDescription("The #game-results message id (or its Copy Message Link URL)")
+        .setRequired(true),
+    ),
 ].map((c) => c.toJSON());
 
 export async function startBot(
@@ -516,6 +553,8 @@ export async function startBot(
   guildId: string | undefined,
   db: DB,
   elo: EloOptions,
+  resultsWebhookUrl?: string,
+  leaderboardWebhookUrl?: string,
 ): Promise<Client> {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -548,6 +587,8 @@ export async function startBot(
         } else {
           await ix.reply(`📊 ${await matchCount(db)} tracked Halo 3 custom matches recorded.`);
         }
+      } else if (ix.commandName === "delete") {
+        await handleDelete(ix, db, elo, resultsWebhookUrl, leaderboardWebhookUrl);
       }
     } catch (e) {
       console.error("[discord] command error:", e);
@@ -557,4 +598,45 @@ export async function startBot(
 
   await client.login(token);
   return client;
+}
+
+/**
+ * Void a game referenced by its #game-results message: drop it from the DB
+ * (ELO/leaderboard recompute from history), delete the original post, and refresh
+ * the live leaderboard. Replies publicly. Gated to Manage Server at registration.
+ */
+async function handleDelete(
+  ix: ChatInputCommandInteraction,
+  db: DB,
+  elo: EloOptions,
+  resultsWebhookUrl?: string,
+  leaderboardWebhookUrl?: string,
+): Promise<void> {
+  const msgId = extractMessageId(ix.options.getString("game", true));
+  if (!msgId) {
+    await ix.reply("That doesn't look like a message id or link.");
+    return;
+  }
+
+  const matchId = await matchIdByResultsMsg(db, msgId);
+  if (!matchId) {
+    await ix.reply(
+      "No tracked game found for that post — it may predate message tracking. " +
+        "Use the `remove-match` CLI on the host for older games.",
+    );
+    return;
+  }
+
+  const target = (await matchesChrono(db)).find((m) => m.matchId === matchId);
+  const summary = target ? matchSummary(target) : `match \`${matchId}\``;
+
+  await deleteMatch(db, matchId);
+  if (resultsWebhookUrl) await deleteMessage(resultsWebhookUrl, msgId);
+  try {
+    await upsertLeaderboard(leaderboardWebhookUrl, db, elo);
+  } catch (e) {
+    console.error("[discord] leaderboard refresh after delete failed:", (e as Error).message);
+  }
+
+  await ix.reply(`🗑️ Voided ${summary}. ${await matchCount(db)} matches remain.`);
 }

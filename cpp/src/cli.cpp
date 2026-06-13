@@ -608,8 +608,10 @@ int cmdWatch() {
         }
 
         try {
-            postMatchResult(config().discordResultsWebhookUrl, *report,
-                            eloChanges.empty() ? nullptr : &eloChanges);
+            // Capture the #game-results message id so the game can later be voided via /delete.
+            std::string msgId = postMatchResult(config().discordResultsWebhookUrl, *report,
+                                                eloChanges.empty() ? nullptr : &eloChanges);
+            if (!msgId.empty()) db->setMatchResultsMsg(report->matchId, msgId);
         } catch (const std::exception& e) {
             std::cerr << "[discord] result post failed: " << e.what() << "\n";
         }

@@ -130,6 +130,9 @@ export async function openDb(url: string, authToken?: string): Promise<DB> {
   }
   // Pre-duration databases: add the column; old rows stay NULL (= always count).
   await db.execute("ALTER TABLE matches ADD COLUMN duration_seconds INTEGER").catch(() => {});
+  // Discord #game-results message id, captured at post time so a match can be
+  // voided by referencing its post. NULL on rows posted before this existed.
+  await db.execute("ALTER TABLE matches ADD COLUMN results_msg_id TEXT").catch(() => {});
 
   return db;
 }
@@ -306,4 +309,31 @@ export async function displayNames(db: DB): Promise<Map<string, string>> {
 export async function matchCount(db: DB): Promise<number> {
   const res = await db.execute("SELECT COUNT(*) AS n FROM matches");
   return num(res.rows[0]?.n);
+}
+
+/** Record the Discord #game-results message id for a match, so it can later be voided by post. */
+export async function setMatchResultsMsg(db: DB, matchId: string, msgId: string): Promise<void> {
+  await serializeWrite(() =>
+    db.execute({
+      sql: "UPDATE matches SET results_msg_id = ? WHERE match_id = ?",
+      args: [msgId, matchId],
+    }),
+  );
+}
+
+/** Resolve a #game-results message id back to its match_id (undefined if untracked). */
+export async function matchIdByResultsMsg(db: DB, msgId: string): Promise<string | undefined> {
+  const res = await db.execute({
+    sql: "SELECT match_id FROM matches WHERE results_msg_id = ?",
+    args: [msgId],
+  });
+  return res.rows[0] ? String(res.rows[0].match_id) : undefined;
+}
+
+/** Delete a match and its players (match_players cascades via ON DELETE CASCADE). Returns rows removed. */
+export async function deleteMatch(db: DB, matchId: string): Promise<number> {
+  const res = await serializeWrite(() =>
+    db.execute({ sql: "DELETE FROM matches WHERE match_id = ?", args: [matchId] }),
+  );
+  return res.rowsAffected;
 }

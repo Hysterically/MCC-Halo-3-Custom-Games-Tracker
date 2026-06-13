@@ -19,7 +19,7 @@ import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import chokidar from "chokidar";
 import { config } from "./config.ts";
-import { openDb, recordMatch, matchCount, matchesChrono } from "./db.ts";
+import { openDb, recordMatch, matchCount, matchesChrono, setMatchResultsMsg } from "./db.ts";
 import { matchEloChanges, type EloChange } from "./elo.ts";
 import { parseCarnageFile, type CarnageReport } from "./parseCarnage.ts";
 import { findMapInfo } from "./mapInfo.ts";
@@ -74,9 +74,14 @@ console.log(`[watch] tracking new matches in ${config.carnageDir}`);
 
 // --- optional bot ----------------------------------------------------------
 if (config.discordBotToken) {
-  startBot(config.discordBotToken, config.discordGuildId, db, elo).catch((e) =>
-    console.error("[discord] bot failed to start:", e),
-  );
+  startBot(
+    config.discordBotToken,
+    config.discordGuildId,
+    db,
+    elo,
+    config.discordResultsWebhookUrl,
+    config.discordLeaderboardWebhookUrl,
+  ).catch((e) => console.error("[discord] bot failed to start:", e));
 } else {
   console.log("[discord] no DISCORD_BOT_TOKEN — slash commands disabled");
 }
@@ -128,7 +133,9 @@ async function onFile(path: string): Promise<void> {
   }
 
   try {
-    await postMatchResult(config.discordResultsWebhookUrl, report, eloChanges ?? undefined);
+    // Capture the #game-results message id so the game can later be voided via /delete.
+    const msgId = await postMatchResult(config.discordResultsWebhookUrl, report, eloChanges ?? undefined);
+    if (msgId) await setMatchResultsMsg(db, report.matchId, msgId);
   } catch (e) {
     console.error("[discord] result post failed:", (e as Error).message);
   }

@@ -60,6 +60,14 @@ public:
     virtual std::unordered_map<std::string, std::string> displayNames() = 0;
     virtual long long matchCount() = 0;
 
+    // Record the Discord #game-results message id for a match, so it can later
+    // be voided by referencing its post (see the /delete slash command).
+    virtual void setMatchResultsMsg(const std::string& matchId, const std::string& msgId) = 0;
+    // Resolve a #game-results message id back to its match_id (empty if untracked).
+    virtual std::optional<std::string> matchIdByResultsMsg(const std::string& msgId) = 0;
+    // Delete a match and its players (match_players cascades). Returns rows removed.
+    virtual long long deleteMatch(const std::string& matchId) = 0;
+
     // Wipe all matches/players (used by the `clear` command). Keeps the kv row
     // holding the leaderboard message id so the same Discord message is reused.
     virtual void clearAll() = 0;
