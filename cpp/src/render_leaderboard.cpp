@@ -11,6 +11,7 @@ using std::min;
 }  // namespace Gdiplus
 #include <gdiplus.h>
 
+#include <cmath>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -154,18 +155,18 @@ std::string upperAscii(std::string s) {
 
 }  // namespace
 
+BoardSection buildBoardSection(const std::vector<StoredMatch>& matches, EloOptions elo,
+                               Category cat) {
+    std::vector<StoredMatch> ms;
+    for (const auto& m : matches)
+        if (boardCategory(m) == cat) ms.push_back(m);
+    return {upperAscii(categoryLabel(cat)) + " LEADERBOARD", computeRatings(ms, elo)};
+}
+
 std::vector<BoardSection> buildBoardSections(const std::vector<StoredMatch>& matches,
                                              EloOptions elo) {
-    std::map<int, std::vector<StoredMatch>> byCat;  // key = Category as int
-    for (const auto& m : matches) byCat[static_cast<int>(boardCategory(m))].push_back(m);
-
     std::vector<BoardSection> sections;
-    for (Category c : BOARD_CATEGORIES) {
-        auto it = byCat.find(static_cast<int>(c));
-        std::vector<StoredMatch> ms = it != byCat.end() ? it->second : std::vector<StoredMatch>{};
-        sections.push_back(
-            {upperAscii(categoryLabel(c)) + " LEADERBOARD", computeRatings(ms, elo)});
-    }
+    for (Category c : BOARD_CATEGORIES) sections.push_back(buildBoardSection(matches, elo, c));
     return sections;
 }
 
@@ -213,12 +214,17 @@ std::vector<std::uint8_t> renderLeaderboardPng(const std::vector<BoardSection>& 
     std::unique_ptr<Bitmap> medals[3] = {loadMedal(MEDAL_ASSETS[0]), loadMedal(MEDAL_ASSETS[1]),
                                          loadMedal(MEDAL_ASSETS[2])};
 
-    // Headline, same pattern as "<X> TEAM WON" + gametype subtitle.
+    // Headline, same pattern as "<X> TEAM WON" + gametype subtitle, but centred:
+    // measure "ELO STANDINGS  HALO 3 CUSTOMS" as one unit and centre it on W.
     std::wstring title = L"ELO STANDINGS";
-    drawText(g, title, titleFont, white, MARGIN, TITLE_BASELINE, fmt);
-    RectF titleBox;
+    std::wstring subtitle = L"HALO 3 CUSTOMS";
+    constexpr float TITLE_GAP = 26.0f;
+    RectF titleBox, subtitleBox;
     g.MeasureString(title.c_str(), -1, titleFont.font.get(), PointF(0, 0), fmt, &titleBox);
-    drawText(g, L"HALO 3 CUSTOMS", subtitleFont, subtitleBrush, MARGIN + titleBox.Width + 26,
+    g.MeasureString(subtitle.c_str(), -1, subtitleFont.font.get(), PointF(0, 0), fmt, &subtitleBox);
+    float startX = std::round((W - (titleBox.Width + TITLE_GAP + subtitleBox.Width)) / 2.0f);
+    drawText(g, title, titleFont, white, startX, TITLE_BASELINE, fmt);
+    drawText(g, subtitle, subtitleFont, subtitleBrush, startX + titleBox.Width + TITLE_GAP,
              TITLE_BASELINE, fmt);
 
     int top = static_cast<int>(TITLE_BASELINE) + 10;

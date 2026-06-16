@@ -7,6 +7,7 @@
 
 #include <iostream>
 
+#include "category.h"
 #include "format.h"
 #include "http.h"
 #include "render_carnage.h"
@@ -80,6 +81,54 @@ std::string webhookId(const std::string& url) {
     return url;
 }
 
+// Render a single board section to PNG; empty vector if rendering fails.
+std::vector<unsigned char> tryRenderSection(const BoardSection& section) {
+    try {
+        return renderLeaderboardPng({section});
+    } catch (const std::exception& e) {
+        std::cerr << "[discord] leaderboard render failed, falling back to text: " << e.what()
+                  << "\n";
+        return {};
+    }
+}
+
+// Create-or-edit one persistent webhook message tracked under `key`, with the
+// same last-writer-wins + atomic-claim race handling the single board used.
+void upsertOneMessage(const std::string& url, Db& db, const std::string& key,
+                      const std::string& content, const std::vector<unsigned char>* png) {
+    std::optional<std::string> existing = db.kvGet(key);
+
+    // Happy path: edit the message we already track.
+    if (existing) {
+        if (editMessage(url, *existing, content, png)) return;
+        // Tracked message is gone (deleted by hand). Recreate and CAS the id.
+        std::string replacement = postAndReturnId(url, content, png);
+        if (db.kvCas(key, *existing, replacement)) return;
+        // Another instance already replaced it — drop ours, edit the survivor.
+        deleteMessage(url, replacement);
+        if (auto winner = db.kvGet(key)) editMessage(url, *winner, content, png);
+        return;
+    }
+
+    // No message yet: create one and atomically claim the slot.
+    std::string created = postAndReturnId(url, content, png);
+    if (db.kvClaim(key, created)) return;
+    // Lost the create race — delete our duplicate, edit the one that won.
+    deleteMessage(url, created);
+    if (auto winner = db.kvGet(key)) editMessage(url, *winner, content, png);
+}
+
+// Retire the old single combined-board message (pre-split layout). One-time
+// cleanup: delete it and drop its kv slot so a stale all-in-one board doesn't
+// linger above the three per-category boards.
+void retireCombinedLeaderboard(const std::string& url, Db& db) {
+    std::string key = "lb_msg:" + webhookId(url);
+    if (auto old = db.kvGet(key)) {
+        deleteMessage(url, *old);
+        db.kvDelete(key);
+    }
+}
+
 }  // namespace
 
 void postWebhook(const std::string& url, const std::string& content) {
@@ -116,41 +165,24 @@ std::string postMatchResult(const std::optional<std::string>& url, const Carnage
     return json::parse(r.body).at("id").get<std::string>();
 }
 
+// Refresh the live leaderboard as THREE persistent messages — one per board
+// category, each its own standings PNG (text section as fallback) edited in
+// place. Posted 2v2 -> FFA -> 4v4 (LEADERBOARD_POST_ORDER) so the 4v4 board
+// lands at the bottom of the channel: the newest / most in-focus one. Each id
+// is held in the shared DB under lb_msg:<webhook>:<cat> (the cat key MUST match
+// the TS side), so every instance edits the SAME three messages.
 void upsertLeaderboard(const std::optional<std::string>& url, Db& db, EloOptions elo) {
     if (!url) return;
     std::vector<StoredMatch> matches = db.matchesChrono();
+    // Drop the old single combined message if this webhook still tracks one.
+    retireCombinedLeaderboard(*url, db);
 
-    // Primary form is the rendered standings PNG; if rendering fails for any
-    // reason we fall back to the old text table.
-    std::vector<unsigned char> pngData;
-    try {
-        pngData = renderLeaderboardPng(buildBoardSections(matches, elo));
-    } catch (const std::exception& e) {
-        std::cerr << "[discord] leaderboard render failed, falling back to text: " << e.what()
-                  << "\n";
+    std::string base = webhookId(*url);
+    for (Category cat : LEADERBOARD_POST_ORDER) {
+        // Primary form is the rendered standings PNG; text section on failure.
+        std::vector<unsigned char> pngData = tryRenderSection(buildBoardSection(matches, elo, cat));
+        const std::vector<unsigned char>* png = pngData.empty() ? nullptr : &pngData;
+        std::string content = png ? "" : formatLeaderboardSection(matches, elo, cat);
+        upsertOneMessage(*url, db, "lb_msg:" + base + ":" + categoryKey(cat), content, png);
     }
-    const std::vector<unsigned char>* png = pngData.empty() ? nullptr : &pngData;
-    std::string content = png ? "" : formatLeaderboard(matches, elo);
-
-    std::string key = "lb_msg:" + webhookId(*url);
-    std::optional<std::string> existing = db.kvGet(key);
-
-    // Happy path: edit the message we already track.
-    if (existing) {
-        if (editMessage(*url, *existing, content, png)) return;
-        // Tracked message is gone (deleted by hand). Recreate and CAS the id.
-        std::string replacement = postAndReturnId(*url, content, png);
-        if (db.kvCas(key, *existing, replacement)) return;
-        // Another instance already replaced it — drop ours, edit the survivor.
-        deleteMessage(*url, replacement);
-        if (auto winner = db.kvGet(key)) editMessage(*url, *winner, content, png);
-        return;
-    }
-
-    // No message yet: create one and atomically claim the slot.
-    std::string created = postAndReturnId(*url, content, png);
-    if (db.kvClaim(key, created)) return;
-    // Lost the create race — delete our duplicate, edit the one that won.
-    deleteMessage(*url, created);
-    if (auto winner = db.kvGet(key)) editMessage(*url, *winner, content, png);
 }

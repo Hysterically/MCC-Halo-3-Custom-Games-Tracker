@@ -23,6 +23,13 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 export const BOARD_CATEGORIES: Category[] = ["2v2", "4v4", "ffa"];
 
 /**
+ * Order the per-category leaderboard messages are posted to Discord, top to
+ * bottom. 4v4 goes LAST so it lands at the bottom of the channel — the newest /
+ * most in-focus message. Same set as {@link BOARD_CATEGORIES}, reordered.
+ */
+export const LEADERBOARD_POST_ORDER: Category[] = ["2v2", "ffa", "4v4"];
+
+/**
  * A game shorter than this (in seconds) didn't really happen — it was set up
  * and ended/aborted before a result (e.g. a 0-0 "no-contest" that lands as a
  * tie). Such games are still recorded and posted, but kept off every

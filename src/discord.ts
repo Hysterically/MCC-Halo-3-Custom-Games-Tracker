@@ -31,6 +31,7 @@ import {
   kvGet,
   kvClaim,
   kvCas,
+  kvDelete,
 } from "./db.ts";
 import { computeRatings, type EloChange, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
@@ -39,6 +40,7 @@ import {
   categorize,
   CATEGORY_LABEL,
   BOARD_CATEGORIES,
+  LEADERBOARD_POST_ORDER,
   type Category,
 } from "./category.ts";
 import { displayName } from "./aliases.ts";
@@ -459,29 +461,33 @@ export async function postMatchResult(
     : postAndReturnId(url, formatMatchResult(report, eloChanges));
 }
 
+/** Render a single board section to PNG, or undefined if rendering fails. */
+async function tryRenderSection(section: BoardSection): Promise<Buffer | undefined> {
+  try {
+    return await renderLeaderboardPng([section]);
+  } catch (e) {
+    console.warn(
+      "[discord] leaderboard render failed, falling back to text:",
+      (e as Error).message,
+    );
+    return undefined;
+  }
+}
+
 /**
- * Refresh the live leaderboard by editing a single persistent message in place.
- *
- * The message id is held in the shared DB (kv `lb_msg:<webhook>`), so every
- * instance edits the SAME message instead of each posting its own — that's what
- * keeps two watchers from producing duplicate / diverging boards. Editing in
- * place (rather than post-new + delete-old) is also what makes concurrent
- * refreshes safe: both compute identical content from the one canonical DB, so
- * a last-writer-wins PATCH is harmless. Only the first-ever creation races, and
- * that's resolved with an atomic kv claim (the loser deletes its extra message).
+ * Create-or-edit one persistent webhook message tracked under `key`. Same
+ * last-writer-wins + atomic-claim race handling the single combined board used:
+ * every instance edits the SAME message per key instead of each posting its
+ * own, and only the first-ever creation races (resolved with an atomic kv claim,
+ * the loser deleting its extra message).
  */
-export async function upsertLeaderboard(
-  url: string | undefined,
+async function upsertOneMessage(
+  url: string,
   db: DB,
-  elo: EloOptions,
+  key: string,
+  content: string,
+  png?: Buffer,
 ): Promise<void> {
-  if (!url) return;
-  const matches = await matchesChrono(db);
-  // Primary form is the rendered standings PNG; if rendering fails for any
-  // reason we fall back to the old text table.
-  const png = await tryRenderLeaderboard(matches, elo);
-  const content = png ? "" : formatLeaderboard(matches, elo);
-  const key = `lb_msg:${webhookId(url)}`;
   const existing = await kvGet(db, key);
 
   // Happy path: edit the message we already track.
@@ -504,6 +510,53 @@ export async function upsertLeaderboard(
   await deleteMessage(url, created);
   const winner = await kvGet(db, key);
   if (winner) await editMessage(url, winner, content, png);
+}
+
+/**
+ * Retire the old single combined-board message (the pre-split layout). One-time
+ * cleanup: delete the message and drop its kv slot so a stale all-in-one board
+ * doesn't linger above the three per-category boards.
+ */
+async function retireCombinedLeaderboard(url: string, db: DB): Promise<void> {
+  const key = `lb_msg:${webhookId(url)}`;
+  const old = await kvGet(db, key);
+  if (!old) return;
+  await deleteMessage(url, old);
+  await kvDelete(db, key);
+}
+
+/**
+ * Refresh the live leaderboard as THREE persistent messages — one per board
+ * category, each its own standings PNG (text section as fallback) edited in
+ * place. They're posted 2v2 → FFA → 4v4 ({@link LEADERBOARD_POST_ORDER}) so the
+ * 4v4 board lands at the bottom of the channel: the newest / most in-focus one.
+ *
+ * Each message's id is held in the shared DB under `lb_msg:<webhook>:<cat>`, so
+ * every instance edits the SAME three messages instead of each posting its own.
+ * See {@link upsertOneMessage} for the per-message race handling.
+ */
+export async function upsertLeaderboard(
+  url: string | undefined,
+  db: DB,
+  elo: EloOptions,
+): Promise<void> {
+  if (!url) return;
+  const matches = await matchesChrono(db);
+  // Drop the old single combined message if this webhook still tracks one.
+  await retireCombinedLeaderboard(url, db);
+
+  const byCat = groupByCategory(matches);
+  const base = webhookId(url);
+  for (const cat of LEADERBOARD_POST_ORDER) {
+    const ratings = computeRatings(byCat.get(cat) ?? [], elo);
+    // Primary form is the rendered standings PNG; text section on failure.
+    const png = await tryRenderSection({
+      title: `${CATEGORY_LABEL[cat].toUpperCase()} LEADERBOARD`,
+      ratings,
+    });
+    const content = png ? "" : formatSection(`🏆 ${CATEGORY_LABEL[cat]} Leaderboard`, ratings);
+    await upsertOneMessage(url, db, `lb_msg:${base}:${cat}`, content, png);
+  }
 }
 
 // --- slash-command bot ------------------------------------------------------

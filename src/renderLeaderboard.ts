@@ -95,15 +95,22 @@ export async function renderLeaderboardPng(
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, height);
 
-  // Headline, same pattern as "<X> TEAM WON" + gametype subtitle.
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `bold 44px ${FONT}`;
+  // Headline, same pattern as "<X> TEAM WON" + gametype subtitle, but centred:
+  // measure "ELO STANDINGS  HALO 3 CUSTOMS" as one unit and centre it on W.
   const title = "ELO STANDINGS";
-  ctx.fillText(title, MARGIN, TITLE_BASELINE);
+  const subtitle = "HALO 3 CUSTOMS";
+  const TITLE_GAP = 26;
+  ctx.font = `bold 44px ${FONT}`;
   const titleW = ctx.measureText(title).width;
   ctx.font = `28px ${FONT}`;
+  const subtitleW = ctx.measureText(subtitle).width;
+  const startX = Math.round((W - (titleW + TITLE_GAP + subtitleW)) / 2);
+  ctx.font = `bold 44px ${FONT}`;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(title, startX, TITLE_BASELINE);
+  ctx.font = `28px ${FONT}`;
   ctx.fillStyle = "#d4dbe4";
-  ctx.fillText("HALO 3 CUSTOMS", MARGIN + titleW + 26, TITLE_BASELINE);
+  ctx.fillText(subtitle, startX + titleW + TITLE_GAP, TITLE_BASELINE);
 
   let y = TITLE_BASELINE + 10;
   for (const s of sections) {

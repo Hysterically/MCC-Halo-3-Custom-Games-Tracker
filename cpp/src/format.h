@@ -8,12 +8,18 @@
 #include <vector>
 
 #include "carnage.h"
+#include "category.h"
 #include "db.h"
 #include "elo.h"
 
 // The combined leaderboard: one section per board category, each computed from
 // only that category's matches.
 std::string formatLeaderboard(const std::vector<StoredMatch>& matches, EloOptions elo);
+
+// One category's leaderboard section as standalone text (the 🏆 heading + code
+// block), used as the per-message fallback when its PNG fails to render.
+std::string formatLeaderboardSection(const std::vector<StoredMatch>& matches, EloOptions elo,
+                                     Category cat);
 
 // Detailed per-match summary: gametype, teams or FFA, K/D/A, winner.
 // `eloChanges` (xuid -> post-match rating + change, nullable) appends a

@@ -22,9 +22,28 @@ inline const char* categoryLabel(Category c) {
     }
 }
 
+// Stable category key matching the TS Category string union ("2v2" | "4v4" |
+// "ffa" | "other"). Used in shared kv keys (lb_msg:<webhook>:<cat>), so it MUST
+// stay byte-identical to the TS side — distinct from categoryLabel(), which
+// upper-cases FFA for display.
+inline const char* categoryKey(Category c) {
+    switch (c) {
+        case Category::TwoV2: return "2v2";
+        case Category::FourV4: return "4v4";
+        case Category::FFA: return "ffa";
+        default: return "other";
+    }
+}
+
 // Categories that get a leaderboard section, in display order.
 inline constexpr std::array<Category, 3> BOARD_CATEGORIES = {
     Category::TwoV2, Category::FourV4, Category::FFA};
+
+// Order the per-category leaderboard messages are posted to Discord, top to
+// bottom. 4v4 goes LAST so it lands at the bottom of the channel — the newest /
+// most in-focus message. Mirrors LEADERBOARD_POST_ORDER in src/category.ts.
+inline constexpr std::array<Category, 3> LEADERBOARD_POST_ORDER = {
+    Category::TwoV2, Category::FFA, Category::FourV4};
 
 // A game shorter than this (seconds) didn't really happen — it was ended/aborted
 // before a result (e.g. a 0-0 no-contest that lands as a tie). Such games are

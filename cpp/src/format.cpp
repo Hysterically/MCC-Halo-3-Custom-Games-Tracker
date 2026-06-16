@@ -114,6 +114,15 @@ std::string formatLeaderboard(const std::vector<StoredMatch>& matches, EloOption
     return join(parts, "\n\n");
 }
 
+std::string formatLeaderboardSection(const std::vector<StoredMatch>& matches, EloOptions elo,
+                                     Category cat) {
+    std::vector<StoredMatch> ms;
+    for (const auto& m : matches)
+        if (boardCategory(m) == cat) ms.push_back(m);
+    std::string title = std::string(TROPHY) + " " + categoryLabel(cat) + " Leaderboard";
+    return formatSection(title, computeRatings(ms, elo));
+}
+
 std::string formatMatchCaption(const CarnageReport& r) {
     Category cat = boardCategory(r);
     std::string tag = cat == Category::Other
