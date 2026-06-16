@@ -238,7 +238,7 @@ export function formatMatchCaption(r: CarnageReport): string {
       ? "_Off-format — not counted toward a leaderboard._"
       : `_Counted toward **${CATEGORY_LABEL[cat]}** leaderboard._`;
   const map = [r.mapName, r.mapVariant].filter(Boolean).join(" — ");
-  return `${map ? `🗺️ **${map}**\n` : ""}${tag}`;
+  return `${map ? `**${map}**\n` : ""}${tag}`;
 }
 
 /**
@@ -272,7 +272,7 @@ export function formatMatchResult(r: CarnageReport, eloChanges?: Map<string, Elo
   const header =
     `🎮 **${r.gameTypeName || "Custom Game"}** · ${r.players.length} ${
       r.players.length === 1 ? "player" : "players"
-    }${map ? `\n🗺️ ${map}` : ""}\n${tag}`;
+    }${map ? `\n${map}` : ""}\n${tag}`;
 
   const kd = (p: CarnagePlayer): string =>
     p.deaths ? (p.kills / p.deaths).toFixed(2) : p.kills.toFixed(2);
