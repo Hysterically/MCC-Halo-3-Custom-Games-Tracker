@@ -120,10 +120,10 @@ std::string formatMatchCaption(const CarnageReport& r) {
                           ? std::string("_Off-format ") + EMDASH + " not counted toward a leaderboard._"
                           : std::string("_Counted toward **") + categoryLabel(cat) +
                                 "** leaderboard._";
-    std::string map = r.mapName;
-    if (!r.mapVariant.empty())
-        map += (map.empty() ? "" : std::string(" ") + EMDASH + " ") + r.mapVariant;
-    return (map.empty() ? "" : "**" + map + "**\n") + tag;
+    std::string mapLabel = !r.mapVariant.empty() ? r.mapVariant : r.mapName;
+    std::string gt = r.gameTypeName.empty() ? "Custom Game" : r.gameTypeName;
+    std::string header = gt + (mapLabel.empty() ? "" : " on " + mapLabel);
+    return "**" + header + "**\n" + tag;
 }
 
 std::string formatMatchResult(const CarnageReport& r,
