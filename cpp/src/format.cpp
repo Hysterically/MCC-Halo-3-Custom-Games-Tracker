@@ -123,7 +123,7 @@ std::string formatMatchCaption(const CarnageReport& r) {
     std::string map = r.mapName;
     if (!r.mapVariant.empty())
         map += (map.empty() ? "" : std::string(" ") + EMDASH + " ") + r.mapVariant;
-    return (map.empty() ? "" : "\xF0\x9F\x97\xBA\xEF\xB8\x8F **" + map + "**\n") + tag;
+    return (map.empty() ? "" : "**" + map + "**\n") + tag;
 }
 
 std::string formatMatchResult(const CarnageReport& r,
@@ -140,7 +140,7 @@ std::string formatMatchResult(const CarnageReport& r,
     std::string header = std::string(GAMEPAD) + " **" + gt + "** \xC2\xB7 " +
                          std::to_string(r.players.size()) + " " +
                          (r.players.size() == 1 ? "player" : "players") +
-                         (map.empty() ? "" : "\n\xF0\x9F\x97\xBA\xEF\xB8\x8F " + map) + "\n" + tag;
+                         (map.empty() ? "" : "\n" + map) + "\n" + tag;
 
     if (!r.teamsEnabled) {
         // FFA — rank by standing (0 = best).
