@@ -1,8 +1,8 @@
 // How a match gets classified for leaderboard purposes.
 //   "2v2"   teams on, two teams of two human players.
-//   "4v4"   teams on, two teams of three or four human players (3v3 shares it).
+//   "4v4"   teams on, two teams of exactly four human players.
 //   "ffa"   teams off (any non-team custom).
-//   "other" everything else (1v1, asymmetric, 3+ teams, 5v5+); still recorded
+//   "other" everything else (1v1, 3v3, asymmetric, 3+ teams, 5v5+); still recorded
 //           and posted, just not on any leaderboard.
 // Mirrors src/category.ts.
 #pragma once
@@ -54,7 +54,7 @@ Category categorize(const M& m) {
     for (auto& [k, v] : sizes) counts.push_back(v);
     if (counts.size() != 2 || counts[0] != counts[1]) return Category::Other;
     if (counts[0] == 2) return Category::TwoV2;
-    if (counts[0] == 3 || counts[0] == 4) return Category::FourV4;
+    if (counts[0] == 4) return Category::FourV4;
     return Category::Other;
 }
 

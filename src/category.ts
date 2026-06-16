@@ -2,11 +2,9 @@
  * How a match gets classified for leaderboard purposes.
  *
  *   "2v2"   — teams on, two teams of two human players.
- *   "4v4"   — teams on, two teams of three or four human players. 3v3 and
- *             4v4 share a board because they're the same "big team" vibe
- *             (and 3v3 often happens just because someone didn't show).
+ *   "4v4"   — teams on, two teams of exactly four human players.
  *   "ffa"   — teams off (Rumble Pit / Lone Wolves / any non-team custom).
- *   "other" — everything else (1v1, asymmetric, 3+ teams, 5v5+). These
+ *   "other" — everything else (1v1, 3v3, asymmetric, 3+ teams, 5v5+). These
  *             matches are still recorded and posted to #game-results, they
  *             just don't contribute to any leaderboard.
  */
@@ -69,6 +67,6 @@ export function categorize(m: CategorisableMatch): Category {
   const counts = [...sizes.values()];
   if (counts.length !== 2 || counts[0] !== counts[1]) return "other";
   if (counts[0] === 2) return "2v2";
-  if (counts[0] === 3 || counts[0] === 4) return "4v4";
+  if (counts[0] === 4) return "4v4";
   return "other";
 }
