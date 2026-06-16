@@ -237,8 +237,9 @@ export function formatMatchCaption(r: CarnageReport): string {
     cat === "other"
       ? "_Off-format — not counted toward a leaderboard._"
       : `_Counted toward **${CATEGORY_LABEL[cat]}** leaderboard._`;
-  const map = [r.mapName, r.mapVariant].filter(Boolean).join(" — ");
-  return `${map ? `**${map}**\n` : ""}${tag}`;
+  const mapLabel = r.mapVariant || r.mapName;
+  const header = `${r.gameTypeName || "Custom Game"}${mapLabel ? ` on ${mapLabel}` : ""}`;
+  return `**${header}**\n${tag}`;
 }
 
 /**
