@@ -5,6 +5,8 @@
 
 #include "aliases.h"
 #include "category.h"
+#include "csr.h"
+#include "trueskill2.h"
 #include "util.h"
 
 namespace {
@@ -121,6 +123,97 @@ std::string formatLeaderboardSection(const std::vector<StoredMatch>& matches, El
         if (boardCategory(m) == cat) ms.push_back(m);
     std::string title = std::string(TROPHY) + " " + categoryLabel(cat) + " Leaderboard";
     return formatSection(title, computeRatings(ms, elo));
+}
+
+// --- CSR (TrueSkill 2) text (mirror the CSR formatters in src/discord.ts) ----
+namespace {
+
+const char* MEDAL_EMOJI_TS2 = "\xF0\x9F\x8E\x96\xEF\xB8\x8F";  // 🎖️
+
+// One category's CSR ratings, ranked best-first, only players with games.
+std::vector<MMR> csrRowsFor(const std::vector<StoredMatch>& matches, Category cat) {
+    std::vector<StoredMatch> ms;
+    for (const auto& m : matches)
+        if (boardCategory(m) == cat) ms.push_back(m);
+    std::vector<MMR> all = rateCategory(ms);
+    std::vector<MMR> out;
+    for (const auto& r : all)
+        if (r.games > 0) out.push_back(r);
+    std::stable_sort(out.begin(), out.end(),
+                     [](const MMR& a, const MMR& b) { return a.skill > b.skill; });
+    return out;
+}
+
+// One CSR board section (mirrors formatCsrSection in src/discord.ts).
+std::string formatCsrSection(Category cat, const std::vector<StoredMatch>& matches,
+                             size_t limit = 20) {
+    std::string heading = std::string("__**") + MEDAL_EMOJI_TS2 + " " + categoryLabel(cat) + " " +
+                          EMDASH + " TrueSkill 2**__";
+    std::vector<MMR> rows = csrRowsFor(matches, cat);
+    if (rows.size() > limit) rows.resize(limit);
+    if (rows.empty()) return heading + "\n_No matches yet._";
+
+    std::vector<std::string> names;
+    size_t nameW = 6;
+    for (const auto& r : rows) {
+        names.push_back(displayName(r.gamertag));
+        nameW = std::max(nameW, names.back().size());
+    }
+    std::string head = padEnd("#", 5) + padEnd("Player", nameW) + "  " + padEnd("CSR", 16) +
+                       " W-L-D    Win%   K/D";
+    std::vector<std::string> lines;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const MMR& r = rows[i];
+        Csr cell = csrFromSkill(r.skill);
+        std::string label = cell.label + " (" + std::to_string(cell.value) + ")";
+        std::string wld = std::to_string(r.wins) + "-" + std::to_string(r.losses) + "-" +
+                          std::to_string(r.draws);
+        std::string winPct = r.games ? std::to_string(util::jsRound(static_cast<double>(r.wins) /
+                                                                    static_cast<double>(r.games) *
+                                                                    100.0)) +
+                                           "%"
+                                     : EMDASH;
+        std::string kd = kdStr(r.kills, r.deaths);
+        std::string marker = i < 3 ? MEDALS[i] : "  ";
+        lines.push_back(marker + padEnd(std::to_string(i + 1), 2) + " " + padEnd(names[i], nameW) +
+                        "  " + padEnd(label, 16) + " " + padEnd(wld, 7) + " " + padStart(winPct, 4) +
+                        "  " + kd);
+    }
+    std::vector<std::string> out = {heading, "```", head};
+    out.insert(out.end(), lines.begin(), lines.end());
+    out.push_back("```");
+    return join(out, "\n");
+}
+
+}  // namespace
+
+std::string formatCsrLeaderboard(const std::vector<StoredMatch>& matches) {
+    std::vector<std::string> parts = {"**Halo 3 Customs " + std::string(EMDASH) +
+                                      " CSR Standings**"};
+    for (Category c : BOARD_CATEGORIES) parts.push_back(formatCsrSection(c, matches));
+    return join(parts, "\n\n");
+}
+
+std::string formatCsrLeaderboardSection(const std::vector<StoredMatch>& matches, Category cat) {
+    return formatCsrSection(cat, matches);
+}
+
+std::string formatCsrLine(const CarnageReport& r,
+                          const std::map<std::string, CsrChange>* changes) {
+    if (!changes || changes->empty()) return "";
+    std::vector<std::pair<std::string, CsrChange>> entries;
+    for (const auto& p : r.players) {
+        auto it = changes->find(p.xuid);
+        if (it != changes->end()) entries.emplace_back(displayName(p.gamertag), it->second);
+    }
+    if (entries.empty()) return "";
+    std::stable_sort(entries.begin(), entries.end(),
+                     [](const auto& a, const auto& b) { return a.second.delta > b.second.delta; });
+    std::vector<std::string> parts;
+    for (const auto& [name, c] : entries)
+        parts.push_back(name + " " + csrText(c.csr) + " (" + (c.delta >= 0 ? "+" : "") +
+                        std::to_string(c.delta) + ")");
+    return std::string("\n") + MEDAL_EMOJI_TS2 + " **CSR:** " + join(parts, " \xC2\xB7 ");
 }
 
 std::string formatMatchCaption(const CarnageReport& r) {

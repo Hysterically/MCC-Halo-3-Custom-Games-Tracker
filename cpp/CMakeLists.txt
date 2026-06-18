@@ -20,6 +20,8 @@ set(H3_SOURCES
   src/carnage.cpp
   src/mapinfo.cpp
   src/elo.cpp
+  src/csr.cpp
+  src/trueskill2.cpp
   src/aliases.cpp
   src/format.cpp
   src/db.cpp
@@ -28,6 +30,8 @@ set(H3_SOURCES
   src/http.cpp
   src/render_carnage.cpp
   src/render_leaderboard.cpp
+  src/render_csr_leaderboard.cpp
+  src/csr_gfx.cpp
   src/discord_webhook.cpp
   src/discord_gateway.cpp
   src/watcher.cpp

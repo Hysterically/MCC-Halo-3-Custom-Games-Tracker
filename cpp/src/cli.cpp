@@ -25,7 +25,9 @@
 #include "http.h"
 #include "mapinfo.h"
 #include "render_carnage.h"
+#include "render_csr_leaderboard.h"
 #include "render_leaderboard.h"
+#include "trueskill2.h"
 #include "util.h"
 #include "watcher.h"
 
@@ -111,7 +113,7 @@ nlohmann::json reportToJson(const CarnageReport& r) {
 int cmdBoard() {
     auto db = openDb(config().dbUrl, config().dbAuthToken);
     std::cout << db->matchCount() << " tracked matches in " << config().dbUrl << "\n\n";
-    std::cout << formatLeaderboard(db->matchesChrono(), eloOpt()) << "\n";
+    std::cout << formatCsrLeaderboard(db->matchesChrono()) << "\n";
     return 0;
 }
 
@@ -137,7 +139,7 @@ int cmdBackfill(const std::vector<std::string>& args) {
 
     std::cout << "Scanned " << files.size() << " reports in " << dir << ": +" << added
               << " new, " << db->matchCount() << " total.\n\n";
-    std::cout << formatLeaderboard(db->matchesChrono(), eloOpt()) << "\n";
+    std::cout << formatCsrLeaderboard(db->matchesChrono()) << "\n";
     return 0;
 }
 
@@ -396,6 +398,25 @@ std::map<std::string, EloChange> sampleEloChanges(const CarnageReport& r) {
     }
     return d;
 }
+
+// Plausible CSR ratings + changes so the sample render/post show the CSR column
+// across a spread of tiers (and emblems).
+std::map<std::string, CsrChange> sampleCsrChanges(const CarnageReport& r) {
+    const double winnerSkills[4] = {25.6, 22.4, 20.1, 18.0};  // ~onyx .. platinum
+    const double loserSkills[4] = {19.5, 16.8, 13.4, 9.2};    // ~gold .. bronze
+    const int winnerDelta[4] = {31, 24, 18, 12};
+    const int loserDelta[4] = {-14, -19, -23, -28};
+    std::map<std::string, CsrChange> d;
+    int w = 0, l = 0;
+    for (const auto& p : r.players) {
+        bool won = p.teamId == r.winningTeamId.value_or(-1);
+        double skill = won ? winnerSkills[w % 4] : loserSkills[l % 4];
+        int delta = won ? winnerDelta[w % 4] : loserDelta[l % 4];
+        (won ? w : l)++;
+        d[p.xuid] = {skill, csrFromSkill(skill), delta};
+    }
+    return d;
+}
 }  // namespace
 
 int cmdRender(const std::vector<std::string>& args) {
@@ -413,9 +434,9 @@ int cmdRender(const std::vector<std::string>& args) {
         r.mapVariant = map.mapVariant;
     }
     std::string out = args.size() > 1 ? args[1] : "carnage.png";
-    std::map<std::string, EloChange> changes;
-    if (args[0] == "--sample") changes = sampleEloChanges(r);
-    std::vector<unsigned char> png = renderCarnagePng(r, changes.empty() ? nullptr : &changes);
+    std::map<std::string, CsrChange> changes;
+    if (args[0] == "--sample") changes = sampleCsrChanges(r);
+    std::vector<unsigned char> png = renderCarnageCsrPng(r, changes.empty() ? nullptr : &changes);
     if (!util::writeFile(out, std::string(png.begin(), png.end()))) {
         std::cerr << "could not write " << out << "\n";
         return 1;
@@ -459,18 +480,52 @@ std::vector<BoardSection> sampleBoardSections() {
     return {{"2V2 LEADERBOARD", {}}, {"4V4 LEADERBOARD", ratings}, {"FFA LEADERBOARD", {}}};
 }
 
+// Sample CSR standings (a 4v4 board across a spread of tiers) so the leaderboard
+// look can be checked without a live DB.
+std::vector<CsrBoardSection> sampleCsrBoardSections() {
+    struct Row {
+        const char* gt;
+        double skill;
+        long w, l, d;
+        double kd;
+    };
+    const Row rows[] = {
+        {"MK5 Phantom", 26.4, 7, 3, 0, 1.34},  {"QB14GhOsT14QB", 24.1, 5, 4, 0, 1.22},
+        {"oWhittaker", 22.0, 5, 3, 0, 1.10},   {"mike domination", 20.6, 1, 0, 0, 1.67},
+        {"Blopped", 19.2, 2, 1, 0, 1.08},      {"Topher", 17.5, 5, 5, 0, 0.87},
+        {"Hysterically", 15.1, 5, 5, 0, 0.94}, {"I23L04D3D", 12.8, 4, 4, 0, 1.11},
+        {"B7ENDEN", 9.4, 0, 2, 0, 1.04},       {"MK5 FRAG", 6.0, 3, 6, 0, 1.00},
+        {"iwreckshop91", 2.1, 3, 7, 0, 0.85},
+    };
+    std::vector<CsrRow> csrRows;
+    for (const Row& r : rows) {
+        CsrRow rt;
+        rt.gamertag = r.gt;
+        rt.skill = r.skill;
+        rt.peakSkill = r.skill;
+        rt.wins = r.w;
+        rt.losses = r.l;
+        rt.draws = r.d;
+        rt.games = r.w + r.l + r.d;
+        rt.kills = util::jsRound(r.kd * 100);
+        rt.deaths = 100;
+        csrRows.push_back(rt);
+    }
+    return {{"2V2 LEADERBOARD", {}}, {"4V4 LEADERBOARD", csrRows}, {"FFA LEADERBOARD", {}}};
+}
+
 int cmdRenderBoard(const std::vector<std::string>& args) {
-    std::vector<BoardSection> sections;
+    std::vector<CsrBoardSection> sections;
     if (!args.empty() && args[0] == "--sample") {
-        sections = sampleBoardSections();
+        sections = sampleCsrBoardSections();
     } else {
         auto db = openDb(config().dbUrl, config().dbAuthToken);
-        sections = buildBoardSections(db->matchesChrono(), eloOpt());
+        sections = buildCsrBoardSections(db->matchesChrono());
     }
     std::string out = "leaderboard.png";
     for (const auto& a : args)
         if (a != "--sample") out = a;
-    std::vector<unsigned char> png = renderLeaderboardPng(sections);
+    std::vector<unsigned char> png = renderCsrLeaderboardPng(sections);
     if (!util::writeFile(out, std::string(png.begin(), png.end()))) {
         std::cerr << "could not write " << out << "\n";
         return 1;
@@ -485,8 +540,8 @@ int cmdPostSample() {
         return 1;
     }
     CarnageReport sample = sampleReport();
-    std::map<std::string, EloChange> changes = sampleEloChanges(sample);
-    postMatchResult(config().discordResultsWebhookUrl, sample, &changes);
+    std::map<std::string, CsrChange> changes = sampleCsrChanges(sample);
+    postCsrMatchResult(config().discordResultsWebhookUrl, sample, &changes);
     std::cout << "Posted a sample carnage image to the results webhook.\n"
                  "(It is a fake match \xE2\x80\x94 delete the Discord message when done looking.)\n";
     return 0;
@@ -500,7 +555,7 @@ int cmdClear() {
     std::cout << "Done. " << db->matchCount() << " matches remain.\n";
 
     if (config().discordLeaderboardWebhookUrl) {
-        upsertLeaderboard(config().discordLeaderboardWebhookUrl, *db, eloOpt());
+        upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, *db);
         std::cout << "[discord] leaderboard message refreshed (empty).\n";
     }
     return 0;
@@ -514,7 +569,7 @@ int cmdAnnounce() {
         return 1;
     }
     auto db = openDb(config().dbUrl, config().dbAuthToken);
-    upsertLeaderboard(config().discordLeaderboardWebhookUrl, *db, eloOpt());
+    upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, *db);
     std::cout << "[discord] leaderboard message refreshed.\n";
     return 0;
 }
@@ -540,7 +595,7 @@ int cmdWatch() {
               << " matches before this run\n";
     std::cout << "[watch] tracking new matches in " << config().carnageDir << "\n";
 
-    startBotIfConfigured(*db, eloOpt());  // no-op until Phase 5 links the gateway bot
+    startBotIfConfigured(*db);
 
     if (!config().discordResultsWebhookUrl)
         std::cout << "[discord] no DISCORD_RESULTS_WEBHOOK_URL \xE2\x80\x94 per-match posts "
@@ -552,7 +607,7 @@ int cmdWatch() {
     // Refresh once on startup so the board survives DB edits / a deleted message.
     if (config().discordLeaderboardWebhookUrl) {
         try {
-            upsertLeaderboard(config().discordLeaderboardWebhookUrl, *db, eloOpt());
+            upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, *db);
         } catch (const std::exception& e) {
             std::cerr << "[discord] startup leaderboard refresh failed: " << e.what() << "\n";
         }
@@ -597,26 +652,26 @@ int cmdWatch() {
         if (!report) return;
         std::cout << "[match] " << matchLabel(*report) << "\n";
 
-        // Per-player ELO rating + change for the result post — replayed from
+        // Per-player CSR rating + change for the result post — replayed from
         // the recorded history, so it matches exactly what the leaderboard
         // will apply. Best effort: a DB hiccup just posts without the ratings.
-        std::map<std::string, EloChange> eloChanges;
+        std::map<std::string, CsrChange> csrChanges;
         try {
-            eloChanges = matchEloChanges(db->matchesChrono(), report->matchId, eloOpt());
+            csrChanges = matchCsrChanges(db->matchesChrono(), report->matchId);
         } catch (const std::exception& e) {
-            std::cerr << "[elo] change computation failed: " << e.what() << "\n";
+            std::cerr << "[ts2] CSR change computation failed: " << e.what() << "\n";
         }
 
         try {
             // Capture the #game-results message id so the game can later be voided via /delete.
-            std::string msgId = postMatchResult(config().discordResultsWebhookUrl, *report,
-                                                eloChanges.empty() ? nullptr : &eloChanges);
+            std::string msgId = postCsrMatchResult(config().discordResultsWebhookUrl, *report,
+                                                   csrChanges.empty() ? nullptr : &csrChanges);
             if (!msgId.empty()) db->setMatchResultsMsg(report->matchId, msgId);
         } catch (const std::exception& e) {
             std::cerr << "[discord] result post failed: " << e.what() << "\n";
         }
         try {
-            upsertLeaderboard(config().discordLeaderboardWebhookUrl, *db, eloOpt());
+            upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, *db);
         } catch (const std::exception& e) {
             std::cerr << "[discord] leaderboard upsert failed: " << e.what() << "\n";
         }
@@ -633,12 +688,12 @@ int cmdWatch() {
 // cmdSetup is implemented in setup.cpp.
 
 #ifndef H3_HAVE_GATEWAY
-// Phase 4 stub. Replaced by the real gateway bot in Phase 5 (discord_gateway.cpp
-// defines H3_HAVE_GATEWAY target-wide, excluding this).
-void startBotIfConfigured(Db&, EloOptions) {
+// Stub used only when the gateway bot isn't linked (discord_gateway.cpp defines
+// H3_HAVE_GATEWAY target-wide, excluding this).
+void startBotIfConfigured(Db&) {
     if (!config().discordBotToken)
         std::cout << "[discord] no DISCORD_BOT_TOKEN \xE2\x80\x94 slash commands disabled\n";
     else
-        std::cout << "[discord] slash-command bot not built into this binary yet (Phase 5)\n";
+        std::cout << "[discord] slash-command bot not built into this binary\n";
 }
 #endif

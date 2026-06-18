@@ -11,6 +11,7 @@
 #include "format.h"
 #include "http.h"
 #include "render_carnage.h"
+#include "render_csr_leaderboard.h"
 #include "render_leaderboard.h"
 
 using nlohmann::json;
@@ -92,6 +93,17 @@ std::vector<unsigned char> tryRenderSection(const BoardSection& section) {
     }
 }
 
+// Render a single CSR board section to PNG; empty vector if rendering fails.
+std::vector<unsigned char> tryRenderCsrSection(const CsrBoardSection& section) {
+    try {
+        return renderCsrLeaderboardPng({section});
+    } catch (const std::exception& e) {
+        std::cerr << "[discord] CSR leaderboard render failed, falling back to text: " << e.what()
+                  << "\n";
+        return {};
+    }
+}
+
 // Create-or-edit one persistent webhook message tracked under `key`, with the
 // same last-writer-wins + atomic-claim race handling the single board used.
 void upsertOneMessage(const std::string& url, Db& db, const std::string& key,
@@ -165,12 +177,8 @@ std::string postMatchResult(const std::optional<std::string>& url, const Carnage
     return json::parse(r.body).at("id").get<std::string>();
 }
 
-// Refresh the live leaderboard as THREE persistent messages — one per board
-// category, each its own standings PNG (text section as fallback) edited in
-// place. Posted 2v2 -> FFA -> 4v4 (LEADERBOARD_POST_ORDER) so the 4v4 board
-// lands at the bottom of the channel: the newest / most in-focus one. Each id
-// is held in the shared DB under lb_msg:<webhook>:<cat> (the cat key MUST match
-// the TS side), so every instance edits the SAME three messages.
+// Refresh the live ELO leaderboard (legacy — ELO is retired from the live
+// tracker; kept for the dormant analysis path).
 void upsertLeaderboard(const std::optional<std::string>& url, Db& db, EloOptions elo) {
     if (!url) return;
     std::vector<StoredMatch> matches = db.matchesChrono();
@@ -183,6 +191,50 @@ void upsertLeaderboard(const std::optional<std::string>& url, Db& db, EloOptions
         std::vector<unsigned char> pngData = tryRenderSection(buildBoardSection(matches, elo, cat));
         const std::vector<unsigned char>* png = pngData.empty() ? nullptr : &pngData;
         std::string content = png ? "" : formatLeaderboardSection(matches, elo, cat);
+        upsertOneMessage(*url, db, "lb_msg:" + base + ":" + categoryKey(cat), content, png);
+    }
+}
+
+// Primary form is the rendered CSR carnage PNG with a short caption; if rendering
+// fails we fall back to the text scoreboard + a CSR line. ?wait=true captures the
+// created message id — the handle /delete uses to void a game.
+std::string postCsrMatchResult(const std::optional<std::string>& url, const CarnageReport& report,
+                               const std::map<std::string, CsrChange>* csrChanges) {
+    if (!url) return "";
+
+    std::vector<unsigned char> png;
+    try {
+        png = renderCarnageCsrPng(report, csrChanges);
+    } catch (const std::exception& e) {
+        std::cerr << "[discord] CSR carnage render failed, falling back to text: " << e.what()
+                  << "\n";
+    }
+    if (png.empty())
+        return postAndReturnId(*url, formatMatchResult(report) + formatCsrLine(report, csrChanges));
+
+    HttpResponse r = httpPostMultipart(withWait(*url), messageBody(formatMatchCaption(report)),
+                                       "files[0]", "carnage-csr.png", "image/png", png);
+    if (r.networkError) throw std::runtime_error("Discord webhook POST: " + r.error);
+    if (!r.ok())
+        throw std::runtime_error("Discord webhook " + std::to_string(r.status) + ": " + r.body);
+    return json::parse(r.body).at("id").get<std::string>();
+}
+
+// Refresh the live CSR leaderboard as THREE persistent messages (one per board
+// category), reusing the lb_msg:<webhook>:<cat> slots the ELO board used so CSR
+// takes over the existing #leaderboard messages in place. Posted 2v2 -> FFA ->
+// 4v4 so the 4v4 board lands at the bottom of the channel. Mirrors
+// upsertCsrLeaderboard in src/discord.ts.
+void upsertCsrLeaderboard(const std::optional<std::string>& url, Db& db) {
+    if (!url) return;
+    std::vector<StoredMatch> matches = db.matchesChrono();
+    retireCombinedLeaderboard(*url, db);
+
+    std::string base = webhookId(*url);
+    for (Category cat : LEADERBOARD_POST_ORDER) {
+        std::vector<unsigned char> pngData = tryRenderCsrSection(buildCsrBoardSection(matches, cat));
+        const std::vector<unsigned char>* png = pngData.empty() ? nullptr : &pngData;
+        std::string content = png ? "" : formatCsrLeaderboardSection(matches, cat);
         upsertOneMessage(*url, db, "lb_msg:" + base + ":" + categoryKey(cat), content, png);
     }
 }

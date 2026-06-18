@@ -31,7 +31,7 @@
 #include "discord_webhook.h"
 #include "format.h"
 #include "http.h"
-#include "render_leaderboard.h"
+#include "render_csr_leaderboard.h"
 
 using nlohmann::json;
 
@@ -82,8 +82,7 @@ std::string extractMessageId(const std::string& raw) {
 
 class GatewayBot {
 public:
-    GatewayBot(Db& db, EloOptions elo, std::string token)
-        : db_(db), elo_(elo), token_(std::move(token)) {}
+    GatewayBot(Db& db, std::string token) : db_(db), token_(std::move(token)) {}
 
     // Runs forever (until the process exits), reconnecting with backoff.
     void run() {
@@ -106,7 +105,6 @@ public:
 
 private:
     Db& db_;
-    EloOptions elo_;
     std::string token_;
     CURL* curl_ = nullptr;
 
@@ -136,7 +134,7 @@ private:
 
     void registerCommands() {
         json cmds = json::array(
-            {{{"name", "leaderboard"}, {"description", "Show the Halo 3 customs ELO leaderboard"},
+            {{{"name", "leaderboard"}, {"description", "Show the Halo 3 customs CSR leaderboard"},
               {"type", 1}},
              {{"name", "stats"}, {"description", "How many tracked matches are recorded"},
               {"type", 1}},
@@ -360,7 +358,7 @@ private:
         if (config().discordResultsWebhookUrl)
             deleteWebhookMessage(*config().discordResultsWebhookUrl, msgId);
         try {
-            upsertLeaderboard(config().discordLeaderboardWebhookUrl, db_, elo_);
+            upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, db_);
         } catch (const std::exception& e) {
             std::cerr << "[discord] leaderboard refresh after delete failed: " << e.what() << "\n";
         }
@@ -382,12 +380,12 @@ private:
                 std::vector<StoredMatch> matches = db_.matchesChrono();
                 // PNG standings like the #leaderboard channel; text on failure.
                 try {
-                    png = renderLeaderboardPng(buildBoardSections(matches, elo_));
+                    png = renderCsrLeaderboardPng(buildCsrBoardSections(matches));
                 } catch (const std::exception& e) {
                     std::cerr << "[discord] leaderboard render failed, falling back to text: "
                               << e.what() << "\n";
                 }
-                if (png.empty()) content = formatLeaderboard(matches, elo_);
+                if (png.empty()) content = formatCsrLeaderboard(matches);
             } else if (name == "stats") {
                 content = "\xF0\x9F\x93\x8A " + std::to_string(db_.matchCount()) +
                           " tracked Halo 3 custom matches recorded.";
@@ -417,14 +415,14 @@ private:
 
 }  // namespace
 
-void startBotIfConfigured(Db& db, EloOptions elo) {
+void startBotIfConfigured(Db& db) {
     if (!config().discordBotToken) {
         std::cout << "[discord] no DISCORD_BOT_TOKEN \xE2\x80\x94 slash commands disabled\n";
         return;
     }
     std::string token = *config().discordBotToken;
-    std::thread([&db, elo, token]() {
-        GatewayBot bot(db, elo, token);
+    std::thread([&db, token]() {
+        GatewayBot bot(db, token);
         bot.run();
     }).detach();
 }

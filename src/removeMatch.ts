@@ -3,7 +3,7 @@
  *
  * Prints the match it resolved, and — only with --confirm — deletes it
  * (cascading to its players) and refreshes the live #leaderboard message so the
- * standings (ELO is recomputed from history) drop it.
+ * standings (CSR is recomputed from history) drop it.
  *
  * Note: the per-match #game-results post is sent fire-and-forget (no stored
  * message id), so it cannot be deleted from here — remove that post by hand.
@@ -16,7 +16,7 @@ import { config } from "./config.ts";
 import { openDb, matchesChrono, matchCount } from "./db.ts";
 import { categorize } from "./category.ts";
 import { displayName } from "./aliases.ts";
-import { upsertLeaderboard } from "./discord.ts";
+import { upsertCsrLeaderboard } from "./discord.ts";
 
 const confirm = process.argv.includes("--confirm");
 const matchId = process.argv.slice(2).find((a) => !a.startsWith("--"));
@@ -62,7 +62,7 @@ const res = await db.execute({ sql: "DELETE FROM matches WHERE match_id = ?", ar
 console.log(`\nDeleted ${res.rowsAffected} match row. ${await matchCount(db)} matches remain.`);
 
 if (config.discordLeaderboardWebhookUrl) {
-  await upsertLeaderboard(config.discordLeaderboardWebhookUrl, db, { start: config.eloStart, k: config.eloK });
+  await upsertCsrLeaderboard(config.discordLeaderboardWebhookUrl, db);
   console.log("[discord] leaderboard message refreshed.");
 }
 

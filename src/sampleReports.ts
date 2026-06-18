@@ -6,6 +6,8 @@
 
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import type { EloChange } from "./elo.ts";
+import type { CsrChange } from "./trueskill2.ts";
+import { csrFromSkill } from "./csr.ts";
 
 const p = (
   gamertag: string,
@@ -83,6 +85,31 @@ export function sampleEloChanges(r: CarnageReport): Map<string, EloChange> {
       return p.teamId === r.winningTeamId
         ? [p.xuid, { rating: winnerRatings[w++ % 4], delta: 16 }]
         : [p.xuid, { rating: loserRatings[l++ % 4], delta: -16 }];
+    }),
+  );
+}
+
+/** Plausible post-match CSR + changes so previews show the CSR column. */
+export function sampleCsrChanges(r: CarnageReport): Map<string, CsrChange> {
+  const winnerSkills = [25.6, 22.4, 20.1, 18.0];
+  const loserSkills = [19.5, 16.8, 13.4, 9.2];
+  const winnerDelta = [31, 24, 18, 12];
+  const loserDelta = [-14, -19, -23, -28];
+  const ffaSkills = [24.0, 20.0, 16.0, 11.0];
+  const ffaDelta = [28, 9, -12, -25];
+  let w = 0;
+  let l = 0;
+  return new Map(
+    r.players.map((p) => {
+      if (!r.teamsEnabled) {
+        const i = Math.min(p.standing, 3);
+        return [p.xuid, { skill: ffaSkills[i], csr: csrFromSkill(ffaSkills[i]), delta: ffaDelta[i] }];
+      }
+      const won = p.teamId === r.winningTeamId;
+      const i = (won ? w++ : l++) % 4;
+      const skill = won ? winnerSkills[i] : loserSkills[i];
+      const delta = won ? winnerDelta[i] : loserDelta[i];
+      return [p.xuid, { skill, csr: csrFromSkill(skill), delta }];
     }),
   );
 }
