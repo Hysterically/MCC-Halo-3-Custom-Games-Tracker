@@ -1,0 +1,129 @@
+/**
+ * Synthetic carnage reports (fictional players, plausible stats) shared by the
+ * render preview and the webhook test post, so the carnage-screen look can be
+ * exercised without playing a match.
+ */
+
+import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
+import type { EloChange } from "./elo.ts";
+import type { CsrChange } from "./trueskill2.ts";
+import { csrFromSkill } from "./csr.ts";
+
+const p = (
+  gamertag: string,
+  teamId: number,
+  score: number,
+  kills: number,
+  assists: number,
+  deaths: number,
+  standing: number,
+): CarnagePlayer => ({
+  gamertag,
+  // Unique per player (the ELO-change column is keyed by XUID); same scheme
+  // as the C++ sampleReport().
+  xuid: `0x${gamertag}`,
+  teamId,
+  score,
+  standing,
+  kills,
+  deaths,
+  assists,
+  betrayals: 0,
+  suicides: 0,
+  secondsPlayed: 600,
+  completedGame: true,
+});
+
+const base = {
+  matchId: "preview",
+  gameEnum: 2,
+  isHalo3: true,
+  isMatchmaking: false,
+  isCustom: true,
+  completed: true,
+  hopperName: "",
+  playedAt: new Date(),
+  winners: [],
+  tracked: true,
+} as const;
+
+export const sampleTeam: CarnageReport = {
+  ...base,
+  teamsEnabled: true,
+  gameTypeName: "Hardcore King",
+  winningTeamId: 0,
+  winners: ["RingRunner117", "BR55Enjoyer", "Cortanas Ghost", "NoScopeNed"],
+  players: [
+    p("RingRunner117", 0, 113, 33, 18, 18, 0),
+    p("BR55Enjoyer", 0, 85, 12, 14, 26, 0),
+    p("Cortanas Ghost", 0, 32, 42, 19, 21, 0),
+    p("NoScopeNed", 0, 20, 32, 17, 20, 0),
+    p("TeaBagTactician", 1, 61, 15, 21, 32, 1),
+    p("PlasmaPickle", 1, 49, 16, 16, 31, 1),
+    p("GruntBirthday", 1, 42, 34, 19, 26, 1),
+    p("Hysterically", 1, 31, 20, 18, 30, 1),
+  ],
+};
+
+/** Plausible post-match ratings + changes so previews show the ELO column. */
+export function sampleEloChanges(r: CarnageReport): Map<string, EloChange> {
+  const ffaByStanding: EloChange[] = [
+    { rating: 1302, delta: 24 },
+    { rating: 1278, delta: 8 },
+    { rating: 1255, delta: -10 },
+    { rating: 1231, delta: -22 },
+  ];
+  const winnerRatings = [1342, 1318, 1296, 1275];
+  const loserRatings = [1289, 1263, 1241, 1210];
+  let w = 0;
+  let l = 0;
+  return new Map(
+    r.players.map((p) => {
+      if (!r.teamsEnabled) {
+        return [p.xuid, ffaByStanding[p.standing] ?? { rating: 1231, delta: -22 }];
+      }
+      return p.teamId === r.winningTeamId
+        ? [p.xuid, { rating: winnerRatings[w++ % 4], delta: 16 }]
+        : [p.xuid, { rating: loserRatings[l++ % 4], delta: -16 }];
+    }),
+  );
+}
+
+/** Plausible post-match CSR + changes so previews show the CSR column. */
+export function sampleCsrChanges(r: CarnageReport): Map<string, CsrChange> {
+  const winnerSkills = [25.6, 22.4, 20.1, 18.0];
+  const loserSkills = [19.5, 16.8, 13.4, 9.2];
+  const winnerDelta = [31, 24, 18, 12];
+  const loserDelta = [-14, -19, -23, -28];
+  const ffaSkills = [24.0, 20.0, 16.0, 11.0];
+  const ffaDelta = [28, 9, -12, -25];
+  let w = 0;
+  let l = 0;
+  return new Map(
+    r.players.map((p) => {
+      if (!r.teamsEnabled) {
+        const i = Math.min(p.standing, 3);
+        return [p.xuid, { skill: ffaSkills[i], csr: csrFromSkill(ffaSkills[i]), delta: ffaDelta[i] }];
+      }
+      const won = p.teamId === r.winningTeamId;
+      const i = (won ? w++ : l++) % 4;
+      const skill = won ? winnerSkills[i] : loserSkills[i];
+      const delta = won ? winnerDelta[i] : loserDelta[i];
+      return [p.xuid, { skill, csr: csrFromSkill(skill), delta }];
+    }),
+  );
+}
+
+export const sampleFfa: CarnageReport = {
+  ...base,
+  teamsEnabled: false,
+  gameTypeName: "Lockout FFA",
+  winningTeamId: null,
+  winners: ["RingRunner117"],
+  players: [
+    p("RingRunner117", -1, 25, 25, 3, 14, 0),
+    p("Hysterically", -1, 21, 21, 5, 18, 1),
+    p("GruntBirthday", -1, 17, 17, 2, 20, 2),
+    p("NoScopeNed", -1, 12, 12, 6, 23, 3),
+  ],
+};

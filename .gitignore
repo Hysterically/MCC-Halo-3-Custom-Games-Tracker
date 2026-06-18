@@ -1,0 +1,11 @@
+node_modules/
+.env
+*.log
+data/
+/dist/
+/h3-tracker-windows.zip
+preview-*.png
+carnage.png
+/friends.env
+/backups/
+/tmp-release.json

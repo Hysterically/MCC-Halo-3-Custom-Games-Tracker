@@ -1,0 +1,9 @@
+# CMake / Ninja build tree (includes vcpkg_installed and all test artifacts)
+build/
+
+# Assembled distribution + release zip (published via GitHub Releases)
+dist/
+
+# Local runtime files (if the exe is ever run from here)
+.env
+data/
