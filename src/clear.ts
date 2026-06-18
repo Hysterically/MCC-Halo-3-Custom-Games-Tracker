@@ -9,7 +9,7 @@
 
 import { config } from "./config.ts";
 import { openDb, matchCount } from "./db.ts";
-import { upsertLeaderboard } from "./discord.ts";
+import { upsertCsrLeaderboard } from "./discord.ts";
 
 const db = await openDb(config.dbUrl, config.dbAuthToken);
 
@@ -28,10 +28,7 @@ await db.batch(
 console.log(`Done. ${await matchCount(db)} matches remain.`);
 
 if (config.discordLeaderboardWebhookUrl) {
-  await upsertLeaderboard(config.discordLeaderboardWebhookUrl, db, {
-    start: config.eloStart,
-    k: config.eloK,
-  });
+  await upsertCsrLeaderboard(config.discordLeaderboardWebhookUrl, db);
   console.log("[discord] leaderboard message refreshed (empty).");
 }
 

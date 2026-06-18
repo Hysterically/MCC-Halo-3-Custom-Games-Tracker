@@ -15,15 +15,15 @@
  * messages have no match. Anything unpaired is reported and left untouched.
  *
  * Edits go through the webhook itself (only a webhook can edit its own
- * messages), replacing both the caption and the PNG. ELO changes are replayed
+ * messages), replacing both the caption and the PNG. CSR changes are replayed
  * from history exactly like the live watcher does, so the restyled posts show
- * the same numbers the leaderboard applied.
+ * the same ranks the leaderboard applied.
  */
 
 import { config } from "./config.ts";
 import { openDb, matchesChrono, type StoredMatch } from "./db.ts";
-import { matchEloChanges, type EloChange } from "./elo.ts";
-import { renderCarnagePng } from "./renderCarnage.ts";
+import { matchCsrChanges, type CsrChange } from "./trueskill2.ts";
+import { renderCarnageCsrPng } from "./renderCarnage.ts";
 import { formatMatchCaption } from "./discord.ts";
 import type { CarnageReport } from "./parseCarnage.ts";
 
@@ -188,11 +188,10 @@ if (!config.discordBotToken) {
   process.exit(1);
 }
 const webhookUrl = config.discordResultsWebhookUrl;
-const elo = { start: config.eloStart, k: config.eloK };
 
 const db = await openDb(config.dbUrl, config.dbAuthToken);
 
-// Chronological history (played_at order) drives the ELO replay; a second
+// Chronological history (played_at order) drives the CSR replay; a second
 // recorded_at order drives the pairing, because posts happen at record time —
 // a backfilled match's played_at can be months before its post (or no post).
 const chrono = await matchesChrono(db);
@@ -249,9 +248,9 @@ if (orphanMessages.length) {
 if (!APPLY) {
   console.log("\nDry run — pairs that WOULD be restyled:");
   for (const { message, match } of pairs) {
-    const changes = matchEloChanges(chrono, match.matchId, elo);
+    const changes = matchCsrChanges(chrono, match.matchId);
     console.log(
-      `  ${when(snowflakeMs(message.id))}  ${label(match)}  elo:${changes ? "yes" : "off-format"}`,
+      `  ${when(snowflakeMs(message.id))}  ${label(match)}  csr:${changes ? "yes" : "off-format"}`,
     );
   }
   console.log(`\nRe-run with --apply to edit these ${pairs.length} posts.`);
@@ -259,10 +258,10 @@ if (!APPLY) {
   let done = 0;
   let gone = 0;
   for (const { message, match } of pairs) {
-    const changes: Map<string, EloChange> | undefined =
-      matchEloChanges(chrono, match.matchId, elo) ?? undefined;
+    const changes: Map<string, CsrChange> | undefined =
+      matchCsrChanges(chrono, match.matchId) ?? undefined;
     const report = toReport(match);
-    const png = renderCarnagePng(report, changes);
+    const png = await renderCarnageCsrPng(report, changes);
     const ok = await editResultMessage(webhookUrl, message.id, formatMatchCaption(report), png);
     done++;
     if (!ok) gone++;

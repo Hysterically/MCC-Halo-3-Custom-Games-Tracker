@@ -44,8 +44,11 @@ import {
   type Category,
 } from "./category.ts";
 import { displayName } from "./aliases.ts";
-import { renderCarnagePng } from "./renderCarnage.ts";
+import { renderCarnagePng, renderCarnageCsrPng } from "./renderCarnage.ts";
 import { renderLeaderboardPng, type BoardSection } from "./renderLeaderboard.ts";
+import { rateCategory, type CsrChange } from "./trueskill2.ts";
+import { renderCsrLeaderboardPng, type CsrRow } from "./renderCsrLeaderboard.ts";
+import { csrFromSkill, csrText } from "./csr.ts";
 
 // --- formatting ------------------------------------------------------------
 
@@ -559,6 +562,219 @@ export async function upsertLeaderboard(
   }
 }
 
+// --- TrueSkill 2 delivery (parallel to the ELO results/leaderboard) ----
+
+/**
+ * One line of per-player CSR ratings + changes, biggest gain first — the CSR
+ * analog of {@link formatEloLine}, used in the text fallback when the PNG fails.
+ */
+function formatCsrLine(r: CarnageReport, changes?: Map<string, CsrChange>): string {
+  if (!changes?.size) return "";
+  const rated = r.players.filter((p) => changes.has(p.xuid));
+  if (!rated.length) return "";
+  const sorted = [...rated].sort((a, b) => changes.get(b.xuid)!.delta - changes.get(a.xuid)!.delta);
+  const parts = sorted.map((p) => {
+    const c = changes.get(p.xuid)!;
+    return `${displayName(p.gamertag)} ${csrText(c.csr)} (${c.delta >= 0 ? "+" : ""}${c.delta})`;
+  });
+  return `\n🎖️ **CSR:** ${parts.join(" · ")}`;
+}
+
+/**
+ * Post a per-match TrueSkill 2 summary to the #ts2-game-results channel:
+ * the carnage-screen PNG with the CSR column (tier + number + change). Falls back
+ * to the text scoreboard + a CSR line if rendering fails. Returns the message id.
+ */
+export async function postCsrMatchResult(
+  url: string | undefined,
+  report: CarnageReport,
+  csrChanges?: Map<string, CsrChange>,
+): Promise<string | undefined> {
+  if (!url) return undefined;
+  let png: Buffer | undefined;
+  try {
+    png = await renderCarnageCsrPng(report, csrChanges);
+  } catch (e) {
+    console.warn("[discord] CSR carnage render failed, falling back to text:", (e as Error).message);
+  }
+  return png
+    ? postAndReturnId(url, formatMatchCaption(report), png, "carnage-csr.png")
+    : postAndReturnId(url, formatMatchResult(report) + formatCsrLine(report, csrChanges));
+}
+
+/** Per-category CSR rows, ranked best-first — the shape the PNG renderer wants. */
+function csrRows(matches: StoredMatch[]): CsrRow[] {
+  return rateCategory(matches)
+    .filter((r) => r.games > 0)
+    .sort((a, b) => b.skill - a.skill)
+    .map((r) => ({
+      gamertag: r.gamertag,
+      skill: r.skill,
+      peakSkill: r.peakSkill,
+      wins: r.wins,
+      losses: r.losses,
+      draws: r.draws,
+      games: r.games,
+      kills: r.kills,
+      deaths: r.deaths,
+    }));
+}
+
+/** Render one CSR board section to PNG, or undefined if rendering fails. */
+async function tryRenderCsrSection(cat: Category, matches: StoredMatch[]): Promise<Buffer | undefined> {
+  try {
+    return await renderCsrLeaderboardPng([
+      { title: `${CATEGORY_LABEL[cat].toUpperCase()} LEADERBOARD`, rows: csrRows(matches) },
+    ]);
+  } catch (e) {
+    console.warn("[discord] CSR leaderboard render failed, falling back to text:", (e as Error).message);
+    return undefined;
+  }
+}
+
+/** Text fallback for one CSR board category (mirrors {@link formatSection}). */
+function formatCsrSection(cat: Category, matches: StoredMatch[], limit = 20): string {
+  const heading = `__**🎖️ ${CATEGORY_LABEL[cat]} — TrueSkill 2**__`;
+  const rows = csrRows(matches).slice(0, limit);
+  if (!rows.length) return `${heading}\n_No matches yet._`;
+  const names = rows.map((r) => displayName(r.gamertag));
+  const nameW = Math.max(6, ...names.map((n) => n.length));
+  const head = `${"#".padEnd(5)}${"Player".padEnd(nameW)}  ${"CSR".padEnd(16)} W-L-D    Win%   K/D`;
+  const lines = rows.map((r, i) => {
+    const cell = csrFromSkill(r.skill);
+    const label = `${cell.label} (${cell.value})`;
+    const wld = `${r.wins}-${r.losses}-${r.draws}`;
+    const winPct = r.games ? `${Math.round((r.wins / r.games) * 100)}%` : "—";
+    const kd = r.deaths ? (r.kills / r.deaths).toFixed(2) : r.kills.toFixed(2);
+    const marker = MEDALS[i] ?? "  ";
+    return `${marker}${String(i + 1).padEnd(2)} ${names[i].padEnd(nameW)}  ${label.padEnd(16)} ${wld.padEnd(
+      7,
+    )} ${winPct.padStart(4)}  ${kd}`;
+  });
+  return [heading, "```", head, ...lines, "```"].join("\n");
+}
+
+/**
+ * Refresh the live TrueSkill 2 leaderboard as THREE persistent messages —
+ * one per board category — in #ts2-leaderboard, each its own CSR standings PNG
+ * (text section as fallback) edited in place. Same per-message race handling and
+ * 2v2 → FFA → 4v4 post order as the ELO board ({@link upsertLeaderboard}).
+ */
+export async function upsertCsrLeaderboard(url: string | undefined, db: DB): Promise<void> {
+  if (!url) return;
+  const matches = await matchesChrono(db);
+  // Drop the old single combined message if this webhook still tracks one.
+  await retireCombinedLeaderboard(url, db);
+
+  const byCat = groupByCategory(matches);
+  const base = webhookId(url);
+  for (const cat of LEADERBOARD_POST_ORDER) {
+    const catMatches = byCat.get(cat) ?? [];
+    const png = await tryRenderCsrSection(cat, catMatches);
+    const content = png ? "" : formatCsrSection(cat, catMatches);
+    // Reuse the `lb_msg:` slot the ELO board used: on the now-CSR #leaderboard
+    // this edits the existing per-category messages in place rather than
+    // leaving the old ELO ones behind.
+    await upsertOneMessage(url, db, `lb_msg:${base}:${cat}`, content, png);
+  }
+}
+
+/** Per-category CSR rating tables in display order, for the combined /leaderboard PNG. */
+function buildCsrBoardSections(matches: StoredMatch[]): { title: string; rows: CsrRow[] }[] {
+  const byCat = groupByCategory(matches);
+  return BOARD_CATEGORIES.map((c) => ({
+    title: `${CATEGORY_LABEL[c].toUpperCase()} LEADERBOARD`,
+    rows: csrRows(byCat.get(c) ?? []),
+  }));
+}
+
+/** The full CSR leaderboard PNG (all categories), or undefined if rendering fails. */
+async function tryRenderCsrLeaderboard(matches: StoredMatch[]): Promise<Buffer | undefined> {
+  try {
+    return await renderCsrLeaderboardPng(buildCsrBoardSections(matches));
+  } catch (e) {
+    console.warn("[discord] CSR leaderboard render failed, falling back to text:", (e as Error).message);
+    return undefined;
+  }
+}
+
+/** Text form of the full CSR leaderboard — the PNG fallback and console output. */
+export function formatCsrLeaderboard(matches: StoredMatch[]): string {
+  const byCat = groupByCategory(matches);
+  const sections = BOARD_CATEGORIES.map((c) => formatCsrSection(c, byCat.get(c) ?? []));
+  return ["**Halo 3 Customs — CSR Standings**", ...sections].join("\n\n");
+}
+
+/**
+ * Per-player CSR stats card: tier + number, rank, W-L-D, Win% and K/D in each
+ * board category, plus an overall line — the CSR analog of {@link formatPlayerStats}.
+ */
+export function formatCsrPlayerStats(matches: StoredMatch[], query: string): string {
+  const who = resolvePlayer(matches, query);
+  if (!who) return `🔍 No player matching **${query}** found.`;
+
+  const byCat = groupByCategory(matches);
+  const rows: { mode: string; rank: string; csr: string; wld: string; win: string; kd: string }[] =
+    [];
+  let games = 0,
+    wins = 0,
+    losses = 0,
+    draws = 0,
+    kills = 0,
+    deaths = 0;
+
+  for (const c of BOARD_CATEGORIES) {
+    const ranked = rateCategory(byCat.get(c) ?? [])
+      .filter((r) => r.games > 0)
+      .sort((a, b) => b.skill - a.skill);
+    const idx = ranked.findIndex((r) => r.xuid === who.xuid);
+    if (idx === -1) continue;
+    const r = ranked[idx];
+    games += r.games;
+    wins += r.wins;
+    losses += r.losses;
+    draws += r.draws;
+    kills += r.kills;
+    deaths += r.deaths;
+    rows.push({
+      mode: CATEGORY_LABEL[c],
+      rank: `#${idx + 1}/${ranked.length}`,
+      csr: csrText(csrFromSkill(r.skill)),
+      wld: `${r.wins}-${r.losses}-${r.draws}`,
+      win: r.games ? `${Math.round((r.wins / r.games) * 100)}%` : "—",
+      kd: r.deaths ? (r.kills / r.deaths).toFixed(2) : r.kills.toFixed(2),
+    });
+  }
+
+  if (!rows.length) {
+    return `📊 **${who.label}** hasn't played any ranked (2v2 / 4v4 / FFA) matches yet.`;
+  }
+
+  const w = {
+    mode: Math.max(4, ...rows.map((r) => r.mode.length)),
+    rank: Math.max(4, ...rows.map((r) => r.rank.length)),
+    csr: Math.max(3, ...rows.map((r) => r.csr.length)),
+    wld: Math.max(5, ...rows.map((r) => r.wld.length)),
+    win: Math.max(4, ...rows.map((r) => r.win.length)),
+  };
+  const head =
+    `${"Mode".padEnd(w.mode)}  ${"Rank".padEnd(w.rank)}  ${"CSR".padEnd(w.csr)}  ` +
+    `${"W-L-D".padEnd(w.wld)}  ${"Win%".padStart(w.win)}   K/D`;
+  const lines = rows.map(
+    (r) =>
+      `${r.mode.padEnd(w.mode)}  ${r.rank.padEnd(w.rank)}  ${r.csr.padEnd(w.csr)}  ` +
+      `${r.wld.padEnd(w.wld)}  ${r.win.padStart(w.win)}  ${r.kd}`,
+  );
+
+  const overallKd = deaths ? (kills / deaths).toFixed(2) : kills.toFixed(2);
+  const overallWin = games ? `${Math.round((wins / games) * 100)}%` : "—";
+  const overall = `Overall: ${games} games · ${wins}-${losses}-${draws} (${overallWin}) · K/D ${overallKd}`;
+
+  return [`📊 **${who.label}** — Halo 3 Customs CSR`, "```", head, ...lines, "", overall, "```"].join(
+    "\n",
+  );
+}
+
 // --- slash-command bot ------------------------------------------------------
 
 /** One-line description of a match for the void confirmation / lookup. */
@@ -580,10 +796,10 @@ function extractMessageId(raw: string): string | undefined {
 const COMMANDS = [
   new SlashCommandBuilder()
     .setName("leaderboard")
-    .setDescription("Show the Halo 3 customs ELO leaderboard"),
+    .setDescription("Show the Halo 3 customs CSR leaderboard"),
   new SlashCommandBuilder()
     .setName("stats")
-    .setDescription("Per-player ELO, rank, W-L-D and K/D — or the match count if no player given")
+    .setDescription("Per-player CSR, rank, W-L-D and K/D — or the match count if no player given")
     .addStringOption((o) =>
       o
         .setName("player")
@@ -606,7 +822,6 @@ export async function startBot(
   token: string,
   guildId: string | undefined,
   db: DB,
-  elo: EloOptions,
   resultsWebhookUrl?: string,
   leaderboardWebhookUrl?: string,
 ): Promise<Client> {
@@ -628,21 +843,21 @@ export async function startBot(
     try {
       if (ix.commandName === "leaderboard") {
         const matches = await matchesChrono(db);
-        const png = await tryRenderLeaderboard(matches, elo);
+        const png = await tryRenderCsrLeaderboard(matches);
         if (png) {
           await ix.reply({ files: [{ attachment: png, name: "leaderboard.png" }] });
         } else {
-          await ix.reply(formatLeaderboard(matches, elo));
+          await ix.reply(formatCsrLeaderboard(matches));
         }
       } else if (ix.commandName === "stats") {
         const query = ix.options.getString("player");
         if (query) {
-          await ix.reply(formatPlayerStats(await matchesChrono(db), elo, query));
+          await ix.reply(formatCsrPlayerStats(await matchesChrono(db), query));
         } else {
           await ix.reply(`📊 ${await matchCount(db)} tracked Halo 3 custom matches recorded.`);
         }
       } else if (ix.commandName === "delete") {
-        await handleDelete(ix, db, elo, resultsWebhookUrl, leaderboardWebhookUrl);
+        await handleDelete(ix, db, resultsWebhookUrl, leaderboardWebhookUrl);
       }
     } catch (e) {
       console.error("[discord] command error:", e);
@@ -656,13 +871,12 @@ export async function startBot(
 
 /**
  * Void a game referenced by its #game-results message: drop it from the DB
- * (ELO/leaderboard recompute from history), delete the original post, and refresh
+ * (CSR/leaderboard recompute from history), delete the original post, and refresh
  * the live leaderboard. Replies publicly. Gated to Manage Server at registration.
  */
 async function handleDelete(
   ix: ChatInputCommandInteraction,
   db: DB,
-  elo: EloOptions,
   resultsWebhookUrl?: string,
   leaderboardWebhookUrl?: string,
 ): Promise<void> {
@@ -687,7 +901,7 @@ async function handleDelete(
   await deleteMatch(db, matchId);
   if (resultsWebhookUrl) await deleteMessage(resultsWebhookUrl, msgId);
   try {
-    await upsertLeaderboard(leaderboardWebhookUrl, db, elo);
+    await upsertCsrLeaderboard(leaderboardWebhookUrl, db);
   } catch (e) {
     console.error("[discord] leaderboard refresh after delete failed:", (e as Error).message);
   }

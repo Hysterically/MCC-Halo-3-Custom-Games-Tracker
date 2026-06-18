@@ -5,9 +5,9 @@
  *
  * Watches the MCC carnage folder. Every time MCC drops a new
  * mpcarnagereport*.xml it is parsed; if it's a completed Halo 3 custom we
- * record it (deduped on GameUniqueId), recompute ELO from full history, post
- * a per-match summary to #game-results, and edit the live leaderboard
- * message in #leaderboard.
+ * record it (deduped on GameUniqueId), recompute CSR (TrueSkill 2) from full
+ * history, post a per-match summary to #game-results, and edit the live
+ * leaderboard message in #leaderboard.
  *
  * On startup we intentionally do NOT auto-ingest historic reports — the
  * MCC folder accumulates years of XMLs and silently importing them would
@@ -20,12 +20,11 @@ import { extname } from "node:path";
 import chokidar from "chokidar";
 import { config } from "./config.ts";
 import { openDb, recordMatch, matchCount, matchesChrono, setMatchResultsMsg } from "./db.ts";
-import { matchEloChanges, type EloChange } from "./elo.ts";
+import { matchCsrChanges, type CsrChange } from "./trueskill2.ts";
 import { parseCarnageFile, type CarnageReport } from "./parseCarnage.ts";
 import { findMapInfo } from "./mapInfo.ts";
-import { postMatchResult, upsertLeaderboard, startBot } from "./discord.ts";
+import { postCsrMatchResult, upsertCsrLeaderboard, startBot } from "./discord.ts";
 
-const elo = { start: config.eloStart, k: config.eloK };
 const isCarnage = (f: string): boolean =>
   /carnage/i.test(f) && extname(f).toLowerCase() === ".xml";
 
@@ -78,7 +77,6 @@ if (config.discordBotToken) {
     config.discordBotToken,
     config.discordGuildId,
     db,
-    elo,
     config.discordResultsWebhookUrl,
     config.discordLeaderboardWebhookUrl,
   ).catch((e) => console.error("[discord] bot failed to start:", e));
@@ -97,7 +95,7 @@ if (!config.discordLeaderboardWebhookUrl) {
 // manual wipe) or a manually-deleted leaderboard message.
 if (config.discordLeaderboardWebhookUrl) {
   try {
-    await upsertLeaderboard(config.discordLeaderboardWebhookUrl, db, elo);
+    await upsertCsrLeaderboard(config.discordLeaderboardWebhookUrl, db);
   } catch (e) {
     console.error("[discord] startup leaderboard refresh failed:", (e as Error).message);
   }
@@ -122,25 +120,30 @@ async function onFile(path: string): Promise<void> {
   if (!report) return;
   console.log(`[match] ${label(report)}`);
 
-  // Per-player ELO rating + change for the result post — replayed from the
-  // recorded history, so it matches exactly what the leaderboard will apply.
+  // Per-player CSR changes for the result post — replayed from the recorded
+  // history, so they match exactly what the leaderboard will apply.
   // Best effort: a DB hiccup just posts the result without the ratings.
-  let eloChanges: Map<string, EloChange> | null = null;
+  const history = await matchesChrono(db);
+  let csrChanges: Map<string, CsrChange> | null = null;
   try {
-    eloChanges = matchEloChanges(await matchesChrono(db), report.matchId, elo);
+    csrChanges = matchCsrChanges(history, report.matchId);
   } catch (e) {
-    console.error("[elo] change computation failed:", (e as Error).message);
+    console.error("[ts2] CSR change computation failed:", (e as Error).message);
   }
 
   try {
     // Capture the #game-results message id so the game can later be voided via /delete.
-    const msgId = await postMatchResult(config.discordResultsWebhookUrl, report, eloChanges ?? undefined);
+    const msgId = await postCsrMatchResult(
+      config.discordResultsWebhookUrl,
+      report,
+      csrChanges ?? undefined,
+    );
     if (msgId) await setMatchResultsMsg(db, report.matchId, msgId);
   } catch (e) {
     console.error("[discord] result post failed:", (e as Error).message);
   }
   try {
-    await upsertLeaderboard(config.discordLeaderboardWebhookUrl, db, elo);
+    await upsertCsrLeaderboard(config.discordLeaderboardWebhookUrl, db);
   } catch (e) {
     console.error("[discord] leaderboard upsert failed:", (e as Error).message);
   }

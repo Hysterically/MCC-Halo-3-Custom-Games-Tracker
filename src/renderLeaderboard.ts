@@ -14,6 +14,7 @@ import { createCanvas, loadImage, type Image, type SKRSContext2D } from "@napi-r
 import { readFile } from "node:fs/promises";
 import type { Rating } from "./elo.ts";
 import { displayName } from "./aliases.ts";
+import { FONT, FONT_BOLD } from "./fonts.ts";
 
 /** One leaderboard table, e.g. { title: "4V4 LEADERBOARD", ratings: [...] }. */
 export interface BoardSection {
@@ -29,7 +30,6 @@ const TITLE_BASELINE = 60;
 const ROW_H = 46;
 const ROW_GAP = 3;
 const BOTTOM_PAD = 26;
-const FONT = "Bahnschrift, Arial";
 
 // All rows share the neutral steel used for FFA rows on the carnage screen;
 // the rank cell is the darker neutral used for the ELO cell there.
@@ -100,12 +100,12 @@ export async function renderLeaderboardPng(
   const title = "ELO STANDINGS";
   const subtitle = "HALO 3 CUSTOMS";
   const TITLE_GAP = 26;
-  ctx.font = `bold 44px ${FONT}`;
+  ctx.font = `44px ${FONT_BOLD}`;
   const titleW = ctx.measureText(title).width;
   ctx.font = `28px ${FONT}`;
   const subtitleW = ctx.measureText(subtitle).width;
   const startX = Math.round((W - (titleW + TITLE_GAP + subtitleW)) / 2);
-  ctx.font = `bold 44px ${FONT}`;
+  ctx.font = `44px ${FONT_BOLD}`;
   ctx.fillStyle = "#ffffff";
   ctx.fillText(title, startX, TITLE_BASELINE);
   ctx.font = `28px ${FONT}`;
@@ -129,7 +129,7 @@ function drawSection(
   medalImgs: Image[],
 ): void {
   const titleBaseline = top + SECTION_TITLE_H;
-  ctx.font = `bold 30px ${FONT}`;
+  ctx.font = `30px ${FONT_BOLD}`;
   ctx.fillStyle = "#ffffff";
   ctx.fillText(s.title, MARGIN, titleBaseline);
 

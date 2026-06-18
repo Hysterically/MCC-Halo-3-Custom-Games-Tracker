@@ -4,8 +4,9 @@ Halo 3 Customs Tracker
 What this does
 --------------
 Watches your Halo MCC custom games and automatically posts each match result
-and the group's shared ELO leaderboard to Discord. There is one leaderboard
-for everyone - no matter whose PC records a match, it feeds the same standings.
+and the group's shared CSR leaderboard (a Halo 5-style rank, Bronze to Onyx)
+to Discord. There is one leaderboard for everyone - no matter whose PC records
+a match, it feeds the same standings.
 
 Quick start - joining the group's shared leaderboard
 ----------------------------------------------------

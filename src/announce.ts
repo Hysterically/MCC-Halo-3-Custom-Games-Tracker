@@ -8,7 +8,7 @@
 
 import { config } from "./config.ts";
 import { openDb } from "./db.ts";
-import { upsertLeaderboard } from "./discord.ts";
+import { upsertCsrLeaderboard } from "./discord.ts";
 
 if (!config.discordLeaderboardWebhookUrl) {
   console.error("No DISCORD_LEADERBOARD_WEBHOOK_URL configured — set it in .env first.");
@@ -16,9 +16,6 @@ if (!config.discordLeaderboardWebhookUrl) {
 }
 
 const db = await openDb(config.dbUrl, config.dbAuthToken);
-await upsertLeaderboard(config.discordLeaderboardWebhookUrl, db, {
-  start: config.eloStart,
-  k: config.eloK,
-});
+await upsertCsrLeaderboard(config.discordLeaderboardWebhookUrl, db);
 db.close();
 console.log("[discord] leaderboard message refreshed.");

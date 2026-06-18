@@ -33,13 +33,16 @@ export interface Config {
   dbAuthToken?: string;
   /** JSON map of Gamertag -> preferred display name on the leaderboard. */
   aliasesPath: string;
-  /** Starting rating every new player is seeded at. */
+  /**
+   * Legacy ELO tuning. ELO is retired from the live tracker (CSR / TrueSkill 2
+   * is the only ladder now), but the dormant `elo.ts` analysis CLIs still read
+   * these, so they stay in config.
+   */
   eloStart: number;
-  /** ELO K-factor (rating swing per game). */
   eloK: number;
-  /** #game-results webhook — per-match summary posts. */
+  /** #game-results webhook — per-match CSR summary posts. */
   discordResultsWebhookUrl?: string;
-  /** #leaderboard webhook — single message edited in place. */
+  /** #leaderboard webhook — the live CSR standings, edited in place. */
   discordLeaderboardWebhookUrl?: string;
   /** Discord bot token — enables the on-demand /leaderboard command. */
   discordBotToken?: string;

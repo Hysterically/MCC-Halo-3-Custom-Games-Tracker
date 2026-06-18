@@ -13,7 +13,7 @@ import { config } from "./config.ts";
 import { openDb, recordMatch, matchCount, matchesChrono } from "./db.ts";
 import { parseCarnageFile } from "./parseCarnage.ts";
 import { findMapInfo } from "./mapInfo.ts";
-import { formatLeaderboard } from "./discord.ts";
+import { formatCsrLeaderboard } from "./discord.ts";
 
 const dir = process.argv[2] ?? config.carnageDir;
 const db = await openDb(config.dbUrl, config.dbAuthToken);
@@ -38,5 +38,5 @@ for (const f of files) {
 }
 
 console.log(`Scanned ${files.length} reports in ${dir}: +${added} new, ${await matchCount(db)} total.\n`);
-console.log(formatLeaderboard(await matchesChrono(db), { start: config.eloStart, k: config.eloK }));
+console.log(formatCsrLeaderboard(await matchesChrono(db)));
 db.close();
