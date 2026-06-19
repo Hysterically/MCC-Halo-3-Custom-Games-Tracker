@@ -138,12 +138,7 @@ function ratingCenter(c: Col): number {
   return (c.x - 14 + (W - MARGIN)) / 2;
 }
 
-interface RenderOpts {
-  /** Centre the rating column's header over the column (vs left-aligned). */
-  centerRatingHeader?: boolean;
-}
-
-function render(r: CarnageReport, cols: Col[], ratingCell?: RatingCell, opts: RenderOpts = {}): Buffer {
+function render(r: CarnageReport, cols: Col[], ratingCell?: RatingCell): Buffer {
   const players = orderedPlayers(r);
   const height = ROWS_TOP + players.length * (ROW_H + ROW_GAP) - ROW_GAP + BOTTOM_PAD;
   const canvas = createCanvas(W, height);
@@ -172,13 +167,7 @@ function render(r: CarnageReport, cols: Col[], ratingCell?: RatingCell, opts: Re
   ctx.fillStyle = "#76b5d8";
   ctx.fillText("PLAYERS", MARGIN + 2, HEADER_BASELINE);
   for (const c of cols) {
-    if (c.stat < 0 && opts.centerRatingHeader) {
-      ctx.textAlign = "center";
-      ctx.fillText(c.label, ratingCenter(c), HEADER_BASELINE);
-      ctx.textAlign = "left";
-    } else {
-      ctx.fillText(c.label, c.x, HEADER_BASELINE);
-    }
+    ctx.fillText(c.label, c.x, HEADER_BASELINE);
   }
 
   // Rows.
@@ -259,7 +248,7 @@ export async function renderCarnageCsrPng(
     ctx.fillStyle = d > 0 ? "#7ed87e" : d < 0 ? "#e8837f" : "#c8cfd8";
     ctx.fillText(deltaText, x, mid);
   };
-  return render(r, hasCsr ? COLS_CSR : COLS, hasCsr ? cell : undefined, { centerRatingHeader: true });
+  return render(r, hasCsr ? COLS_CSR : COLS, hasCsr ? cell : undefined);
 }
 
 function drawRow(
