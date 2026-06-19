@@ -19,11 +19,21 @@ import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import chokidar from "chokidar";
 import { config } from "./config.ts";
-import { openDb, recordMatch, matchCount, matchesChrono, setMatchResultsMsg } from "./db.ts";
+import {
+  openDb,
+  recordMatch,
+  matchCount,
+  matchesChrono,
+  setMatchResultsMsg,
+  setMatchResultsFmt,
+} from "./db.ts";
 import { matchCsrChanges, type CsrChange } from "./trueskill2.ts";
 import { parseCarnageFile, type CarnageReport } from "./parseCarnage.ts";
 import { findMapInfo } from "./mapInfo.ts";
 import { postCsrMatchResult, upsertCsrLeaderboard, startBot } from "./discord.ts";
+import { healStaleResults } from "./heal.ts";
+import { checkForUpdate } from "./updateCheck.ts";
+import { RESULTS_FMT_VERSION } from "./version.ts";
 
 const isCarnage = (f: string): boolean =>
   /carnage/i.test(f) && extname(f).toLowerCase() === ".xml";
@@ -91,6 +101,9 @@ if (!config.discordLeaderboardWebhookUrl) {
   console.log("[discord] no DISCORD_LEADERBOARD_WEBHOOK_URL — live leaderboard disabled");
 }
 
+// Tell the user if their build is behind the latest release (best-effort).
+checkForUpdate().catch(() => {});
+
 // Refresh the leaderboard once on startup so it survives DB edits (e.g. a
 // manual wipe) or a manually-deleted leaderboard message.
 if (config.discordLeaderboardWebhookUrl) {
@@ -99,6 +112,14 @@ if (config.discordLeaderboardWebhookUrl) {
   } catch (e) {
     console.error("[discord] startup leaderboard refresh failed:", (e as Error).message);
   }
+}
+
+// Self-heal: re-style any #game-results posts left in an older layout by an
+// outdated build. Runs in the background so the watcher goes live immediately.
+if (config.discordResultsWebhookUrl) {
+  healStaleResults(db, { log: (m) => console.log(`[heal] ${m}`) }).catch((e) =>
+    console.error("[heal] startup re-style failed:", (e as Error).message),
+  );
 }
 
 // --- live watch ------------------------------------------------------------
@@ -138,7 +159,11 @@ async function onFile(path: string): Promise<void> {
       report,
       csrChanges ?? undefined,
     );
-    if (msgId) await setMatchResultsMsg(db, report.matchId, msgId);
+    if (msgId) {
+      await setMatchResultsMsg(db, report.matchId, msgId);
+      // Stamp the layout version so the startup heal never re-styles a fresh post.
+      await setMatchResultsFmt(db, report.matchId, RESULTS_FMT_VERSION);
+    }
   } catch (e) {
     console.error("[discord] result post failed:", (e as Error).message);
   }

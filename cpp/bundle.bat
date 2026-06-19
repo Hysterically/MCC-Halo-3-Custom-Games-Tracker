@@ -5,6 +5,9 @@ rem   h3-tracker.exe + Start.bat + Setup.bat + README.txt + aliases.json
 rem "Extract here" yields those files at the folder root (double-click Start.bat).
 
 set "HERE=%~dp0"
+rem Stamp the release version into the exe (for the outdated-build check). Pass
+rem the tag as the first arg, e.g. `bundle.bat v1.7.0`; build.bat reads H3_VERSION.
+if "%~1" neq "" set "H3_VERSION=%~1"
 call "%HERE%build.bat"
 if errorlevel 1 ( echo [bundle] build failed & exit /b 1 )
 

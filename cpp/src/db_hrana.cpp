@@ -272,6 +272,43 @@ public:
         return affectedOf(res[0]);
     }
 
+    void setMatchResultsFmt(const std::string& matchId, int version) override {
+        std::lock_guard<std::mutex> lk(writeMtx_);
+        run({execReq("UPDATE matches SET results_fmt = ? WHERE match_id = ?",
+                     {vInt(version), vText(matchId)}),
+             closeReq()});
+    }
+
+    void clearMatchResultsMsg(const std::string& matchId) override {
+        std::lock_guard<std::mutex> lk(writeMtx_);
+        run({execReq("UPDATE matches SET results_msg_id = NULL, results_fmt = NULL "
+                     "WHERE match_id = ?",
+                     {vText(matchId)}),
+             closeReq()});
+    }
+
+    std::vector<RestyleTarget> resultsRestyleTargets(int version, bool force) override {
+        json req = force
+                       ? execReq("SELECT match_id, results_msg_id FROM matches "
+                                 "WHERE results_msg_id IS NOT NULL",
+                                 {}, true)
+                       : execReq("SELECT match_id, results_msg_id FROM matches "
+                                 "WHERE results_msg_id IS NOT NULL "
+                                 "AND (results_fmt IS NULL OR results_fmt < ?)",
+                                 {vInt(version)}, true);
+        auto res = run({req, closeReq()});
+        std::vector<RestyleTarget> out;
+        for (const auto& row : res[0]["rows"]) out.push_back({cellText(row[0]), cellText(row[1])});
+        return out;
+    }
+
+    std::unordered_map<std::string, long long> recordedAtByMatch() override {
+        auto res = run({execReq("SELECT match_id, recorded_at FROM matches", {}, true), closeReq()});
+        std::unordered_map<std::string, long long> out;
+        for (const auto& row : res[0]["rows"]) out[cellText(row[0])] = cellInt(row[1]);
+        return out;
+    }
+
     void clearAll() override {
         std::lock_guard<std::mutex> lk(writeMtx_);
         run({execReq("BEGIN"), execReq("DELETE FROM match_players"), execReq("DELETE FROM matches"),
@@ -304,7 +341,8 @@ private:
         for (const char* sql : {"ALTER TABLE matches ADD COLUMN map_name TEXT",
                                 "ALTER TABLE matches ADD COLUMN map_variant TEXT",
                                 "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER",
-                                "ALTER TABLE matches ADD COLUMN results_msg_id TEXT"}) {
+                                "ALTER TABLE matches ADD COLUMN results_msg_id TEXT",
+                                "ALTER TABLE matches ADD COLUMN results_fmt INTEGER"}) {
             try {
                 run({execReq(sql), closeReq()});
             } catch (...) {

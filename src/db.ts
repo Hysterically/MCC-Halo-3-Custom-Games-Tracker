@@ -133,6 +133,9 @@ export async function openDb(url: string, authToken?: string): Promise<DB> {
   // Discord #game-results message id, captured at post time so a match can be
   // voided by referencing its post. NULL on rows posted before this existed.
   await db.execute("ALTER TABLE matches ADD COLUMN results_msg_id TEXT").catch(() => {});
+  // Layout version of the #game-results post (RESULTS_FMT_VERSION at post time).
+  // NULL = posted by an older build / never stamped → eligible for re-styling.
+  await db.execute("ALTER TABLE matches ADD COLUMN results_fmt INTEGER").catch(() => {});
 
   return db;
 }
@@ -328,6 +331,60 @@ export async function matchIdByResultsMsg(db: DB, msgId: string): Promise<string
     args: [msgId],
   });
   return res.rows[0] ? String(res.rows[0].match_id) : undefined;
+}
+
+/** Stamp the layout version a match's #game-results post was last rendered at. */
+export async function setMatchResultsFmt(db: DB, matchId: string, version: number): Promise<void> {
+  await serializeWrite(() =>
+    db.execute({
+      sql: "UPDATE matches SET results_fmt = ? WHERE match_id = ?",
+      args: [version, matchId],
+    }),
+  );
+}
+
+/** Forget a match's #game-results post id (e.g. the message was deleted / 404). */
+export async function clearMatchResultsMsg(db: DB, matchId: string): Promise<void> {
+  await serializeWrite(() =>
+    db.execute({
+      sql: "UPDATE matches SET results_msg_id = NULL, results_fmt = NULL WHERE match_id = ?",
+      args: [matchId],
+    }),
+  );
+}
+
+/** A tracked #game-results post that may need re-styling: its match + message id. */
+export interface RestyleTarget {
+  matchId: string;
+  msgId: string;
+}
+
+/**
+ * #game-results posts whose layout is behind `version` (or, when `force`, every
+ * post with a known message id) — the work list for the startup heal. Only rows
+ * with a stored results_msg_id are returned; legacy posts with no id are adopted
+ * separately (heal.ts Tier B) before this runs.
+ */
+export async function resultsRestyleTargets(
+  db: DB,
+  version: number,
+  force = false,
+): Promise<RestyleTarget[]> {
+  const res = force
+    ? await db.execute("SELECT match_id, results_msg_id FROM matches WHERE results_msg_id IS NOT NULL")
+    : await db.execute({
+        sql: `SELECT match_id, results_msg_id FROM matches
+               WHERE results_msg_id IS NOT NULL
+                 AND (results_fmt IS NULL OR results_fmt < ?)`,
+        args: [version],
+      });
+  return res.rows.map((r) => ({ matchId: String(r.match_id), msgId: String(r.results_msg_id) }));
+}
+
+/** match_id -> recorded_at (epoch ms). The pairing key for adopting legacy posts. */
+export async function recordedAtByMatch(db: DB): Promise<Map<string, number>> {
+  const res = await db.execute("SELECT match_id, recorded_at FROM matches");
+  return new Map(res.rows.map((r) => [String(r.match_id), num(r.recorded_at)]));
 }
 
 /** Delete a match and its players (match_players cascades via ON DELETE CASCADE). Returns rows removed. */

@@ -15,11 +15,18 @@ if errorlevel 1 ( echo [build] vcvars64 failed & exit /b 1 )
 set "SRCDIR=%~dp0"
 set "BUILDDIR=%SRCDIR%build"
 
+rem Version stamped into the exe for the outdated-build check. The release path
+rem (bundle.bat) sets H3_VERSION to the tag being shipped; a plain dev build
+rem leaves it "dev", which keeps the update check silent.
+if not defined H3_VERSION set "H3_VERSION=dev"
+echo [build] version: %H3_VERSION%
+
 "%CMAKE%" -S "%SRCDIR%." -B "%BUILDDIR%" -G Ninja ^
   -DCMAKE_MAKE_PROGRAM="%NINJA%" ^
   -DCMAKE_BUILD_TYPE=Release ^
   -DCMAKE_TOOLCHAIN_FILE="%VCPKG_TC%" ^
-  -DVCPKG_TARGET_TRIPLET=x64-windows-static
+  -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
+  -DH3_VERSION="%H3_VERSION%"
 if errorlevel 1 ( echo [build] configure failed & exit /b 1 )
 
 "%CMAKE%" --build "%BUILDDIR%" --config Release
