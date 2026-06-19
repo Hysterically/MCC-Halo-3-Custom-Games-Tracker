@@ -403,17 +403,10 @@ std::vector<std::uint8_t> renderCarnageCsrPng(const CarnageReport& r,
     drawText(g, upper(subtitle), subtitleFont, subtitleBrush, MARGIN + titleW + 26, TITLE_BASELINE,
              fmt);
 
-    // Column headers — the CSR header is centred over its column.
+    // Column headers — all left-aligned at their column's x (CSR included).
     drawText(g, L"PLAYERS", headerFont, headerBrush, MARGIN + 2, HEADER_BASELINE, fmt);
-    for (int c = 0; c < nCols; ++c) {
-        if (cols[c].stat < 0) {
-            float cx = ratingCenter(cols[c]);
-            drawText(g, cols[c].label, headerFont, headerBrush,
-                     cx - measureW(g, cols[c].label, headerFont, fmt) / 2.0f, HEADER_BASELINE, fmt);
-        } else {
-            drawText(g, cols[c].label, headerFont, headerBrush, cols[c].x, HEADER_BASELINE, fmt);
-        }
-    }
+    for (int c = 0; c < nCols; ++c)
+        drawText(g, cols[c].label, headerFont, headerBrush, cols[c].x, HEADER_BASELINE, fmt);
 
     SolidBrush ratingCell(ELO_CELL_COLOR);
     SolidBrush up(Color(0x7e, 0xd8, 0x7e));
