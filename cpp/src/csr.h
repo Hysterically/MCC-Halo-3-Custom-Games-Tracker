@@ -9,7 +9,7 @@
 
 // CSR = max(0, round(CSR_SCALE * (mu - 3*sigma))).
 inline constexpr double CSR_SCALE = 63;
-// Champion = the #1 player on a board who has also cleared this CSR floor.
+// Champion = a top-3 player on a board who has also cleared this CSR floor (up to 3).
 inline constexpr int CHAMPION_THRESHOLD = 1600;
 inline constexpr int ONYX_THRESHOLD = 1500;
 

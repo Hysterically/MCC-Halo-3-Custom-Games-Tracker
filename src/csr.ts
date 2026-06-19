@@ -22,9 +22,9 @@ const ONYX_THRESHOLD = 1500;
 
 /**
  * Champion is NOT a tier — it's an accolade layered on top of Onyx, exactly as in
- * Halo Wars 2 / Halo 5: the single #1 player on a board (per playlist) who has also
+ * Halo Wars 2 / Halo 5: up to the top 3 players on a board (per playlist) who have also
  * cleared this CSR floor. It's awarded by leaderboard position, so it can't be
- * derived from a player's skill alone; the renderer applies it to rank #1 when the
+ * derived from a player's skill alone; the renderer applies it to the top 3 rows when the
  * player's CSR is at or above this floor. A champion is still Onyx-rated underneath.
  */
 export const CHAMPION_THRESHOLD = 1600;
