@@ -181,6 +181,7 @@ export function toReport(m: StoredMatch): CarnageReport {
     winningTeamId: m.teamsEnabled ? m.winningTeamId : null,
     winners,
     tracked: true,
+    excluded: m.excluded,
   };
 }
 
@@ -290,4 +291,33 @@ export async function healStaleResults(
   }
   log(`re-styled ${restyled} post${restyled === 1 ? "" : "s"}${gone ? `, ${gone} had vanished` : ""}.`);
   return { adopted, restyled, gone };
+}
+
+/**
+ * Re-render and PATCH a single #game-results post to the current layout — used
+ * right after toggling a match's excluded flag so its caption flips to/from
+ * "Off-format". Returns "restyled", "gone" (the post 404'd — its id is cleared),
+ * or "skipped" (no webhook / match not found). Best-effort; never throws past
+ * the edit itself.
+ */
+export async function restyleResultPost(
+  db: DB,
+  matchId: string,
+  msgId: string,
+): Promise<"restyled" | "gone" | "skipped"> {
+  const webhookUrl = config.discordResultsWebhookUrl;
+  if (!webhookUrl) return "skipped";
+  const chrono = await matchesChrono(db);
+  const match = chrono.find((m) => m.matchId === matchId);
+  if (!match) return "skipped";
+  const changes: Map<string, CsrChange> | undefined = matchCsrChanges(chrono, matchId) ?? undefined;
+  const report = toReport(match);
+  const png = await renderCarnageCsrPng(report, changes);
+  const ok = await editResultMessage(webhookUrl, msgId, formatMatchCaption(report), png);
+  if (ok) {
+    await setMatchResultsFmt(db, matchId, RESULTS_FMT_VERSION);
+    return "restyled";
+  }
+  await clearMatchResultsMsg(db, matchId);
+  return "gone";
 }

@@ -44,18 +44,23 @@ interface CategorisableMatch {
   players: { teamId: number; xuid: string }[];
   /** Longest secondsPlayed across players; undefined if not tracked. */
   durationSeconds?: number;
+  /** Manually voided from the boards (kept recorded + posted, just off-format). */
+  excluded?: boolean;
 }
 
 /**
  * Leaderboard classification: the structural {@link categorize}, except a game
  * shorter than `minSeconds` is forced to "other" so aborted / no-contest games
- * never reach a board. This is the categorizer every board and per-player stat
- * goes through; {@link categorize} stays the pure structural one.
+ * never reach a board. A game explicitly flagged `excluded` is likewise forced
+ * to "other" — the manual lever for voiding a game from every board while
+ * keeping its #game-results post. This is the categorizer every board and
+ * per-player stat goes through; {@link categorize} stays the pure structural one.
  */
 export function boardCategory(
   m: CategorisableMatch,
   minSeconds = MIN_LEADERBOARD_SECONDS,
 ): Category {
+  if (m.excluded) return "other";
   if (m.durationSeconds != null && m.durationSeconds < minSeconds) return "other";
   return categorize(m);
 }

@@ -24,3 +24,10 @@ struct HealStats {
 // of version (the manual `restyle` path); otherwise only those behind
 // RESULTS_FMT_VERSION. Best-effort; logs progress to stdout with a [heal] tag.
 HealStats healStaleResults(Db& db, bool force);
+
+// Re-render + PATCH a single #game-results post to the current layout — used
+// right after toggling a match's excluded flag so its caption flips to/from
+// "Off-format". Returns "restyled", "gone" (the post 404'd — its id is cleared),
+// or "skipped" (no webhook / match not found). Mirrors restyleResultPost in
+// src/heal.ts.
+std::string restyleResultPost(Db& db, const std::string& matchId, const std::string& msgId);

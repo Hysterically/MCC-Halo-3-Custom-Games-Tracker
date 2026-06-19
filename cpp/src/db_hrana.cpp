@@ -197,7 +197,7 @@ public:
                                 "deaths, assists FROM match_players",
                                 {}, true),
                         execReq("SELECT match_id, game_type, teams_enabled, played_at, "
-                                "winning_team_id, map_name, map_variant, duration_seconds "
+                                "winning_team_id, map_name, map_variant, duration_seconds, excluded "
                                 "FROM matches ORDER BY played_at ASC, "
                                 "recorded_at ASC",
                                 {}, true),
@@ -229,6 +229,7 @@ public:
             if (!cellNull(row[5])) m.mapName = cellText(row[5]);
             if (!cellNull(row[6])) m.mapVariant = cellText(row[6]);
             if (!cellNull(row[7])) m.durationSeconds = cellInt(row[7]);
+            m.excluded = cellInt(row[8]) != 0;
             auto it = byMatch.find(m.matchId);
             if (it != byMatch.end()) m.players = it->second;
             out.push_back(std::move(m));
@@ -270,6 +271,13 @@ public:
         auto res = run({execReq("DELETE FROM matches WHERE match_id = ?", {vText(matchId)}),
                         closeReq()});
         return affectedOf(res[0]);
+    }
+
+    void setMatchExcluded(const std::string& matchId, bool excluded) override {
+        std::lock_guard<std::mutex> lk(writeMtx_);
+        run({execReq("UPDATE matches SET excluded = ? WHERE match_id = ?",
+                     {vInt(excluded ? 1 : 0), vText(matchId)}),
+             closeReq()});
     }
 
     void setMatchResultsFmt(const std::string& matchId, int version) override {
@@ -338,11 +346,13 @@ private:
              closeReq()});
         // Migrate pre-map databases in place; a "duplicate column" error just
         // means the migration already ran.
-        for (const char* sql : {"ALTER TABLE matches ADD COLUMN map_name TEXT",
-                                "ALTER TABLE matches ADD COLUMN map_variant TEXT",
-                                "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER",
-                                "ALTER TABLE matches ADD COLUMN results_msg_id TEXT",
-                                "ALTER TABLE matches ADD COLUMN results_fmt INTEGER"}) {
+        for (const char* sql :
+             {"ALTER TABLE matches ADD COLUMN map_name TEXT",
+              "ALTER TABLE matches ADD COLUMN map_variant TEXT",
+              "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER",
+              "ALTER TABLE matches ADD COLUMN results_msg_id TEXT",
+              "ALTER TABLE matches ADD COLUMN results_fmt INTEGER",
+              "ALTER TABLE matches ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0"}) {
             try {
                 run({execReq(sql), closeReq()});
             } catch (...) {

@@ -42,6 +42,7 @@ struct CarnageReport {
     std::optional<int> winningTeamId;          // empty for FFA / undecided
     std::vector<std::string> winners;  // gamertags credited with the win
     bool tracked = false;              // Halo 3 custom that completed
+    bool excluded = false;  // manually voided from the boards (forced off-format)
 };
 
 // Parse a file (uses its mtime as playedAt). Throws std::runtime_error on a

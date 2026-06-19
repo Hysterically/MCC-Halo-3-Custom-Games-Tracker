@@ -54,6 +54,12 @@ export interface CarnageReport {
   winners: string[];
   /** True if this is a Halo 3 custom game that completed — i.e. one we track. */
   tracked: boolean;
+  /**
+   * Manually voided from the boards (forced off-format) while kept recorded +
+   * posted. Never set on a freshly parsed report; carried in when a stored match
+   * is rebuilt for re-rendering (see heal.ts toReport).
+   */
+  excluded?: boolean;
 }
 
 const num = (v: unknown, d = 0): number => {

@@ -72,6 +72,7 @@ CarnageReport fromStoredMatch(const StoredMatch& m) {
     r.durationSeconds = m.durationSeconds;
     r.winningTeamId = m.teamsEnabled ? m.winningTeamId : std::nullopt;
     r.tracked = true;
+    r.excluded = m.excluded;
 
     int bestStanding = 1'000'000;
     for (const auto& p : m.players) bestStanding = std::min(bestStanding, p.standing);
@@ -279,4 +280,30 @@ HealStats healStaleResults(Db& db, bool force) {
         (stats.restyled == 1 ? "" : "s") +
         (stats.gone ? ", " + std::to_string(stats.gone) + " had vanished" : "") + ".");
     return stats;
+}
+
+std::string restyleResultPost(Db& db, const std::string& matchId, const std::string& msgId) {
+    const auto& webhook = config().discordResultsWebhookUrl;
+    if (!webhook) return "skipped";
+
+    std::vector<StoredMatch> chrono = db.matchesChrono();
+    const StoredMatch* match = nullptr;
+    for (const auto& m : chrono)
+        if (m.matchId == matchId) {
+            match = &m;
+            break;
+        }
+    if (!match) return "skipped";
+
+    std::map<std::string, CsrChange> changes = matchCsrChanges(chrono, matchId);
+    CarnageReport report = fromStoredMatch(*match);
+    std::vector<std::uint8_t> png =
+        renderCarnageCsrPng(report, changes.empty() ? nullptr : &changes);
+    bool ok = editResultMessage(*webhook, msgId, formatMatchCaption(report), png);
+    if (ok) {
+        db.setMatchResultsFmt(matchId, RESULTS_FMT_VERSION);
+        return "restyled";
+    }
+    db.clearMatchResultsMsg(matchId);
+    return "gone";
 }

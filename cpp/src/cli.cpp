@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include "carnage.h"
+#include "category.h"
 #include "config.h"
 #include "db.h"
 #include "discord_gateway.h"
@@ -610,6 +611,76 @@ int cmdRestyle(const std::vector<std::string>& args) {
     HealStats s = healStaleResults(*db, /*force=*/true);
     std::cout << "\nDone: adopted " << s.adopted << ", re-styled " << s.restyled
               << (s.gone ? ", " + std::to_string(s.gone) + " had vanished" : "") << ".\n";
+    return 0;
+}
+
+int cmdExclude(const std::vector<std::string>& args) {
+    bool confirm = std::find(args.begin(), args.end(), "--confirm") != args.end();
+    bool restore = std::find(args.begin(), args.end(), "--restore") != args.end();
+    std::string matchId;
+    for (const auto& a : args)
+        if (a.rfind("--", 0) != 0) {
+            matchId = a;
+            break;
+        }
+    if (matchId.empty()) {
+        std::cerr << "Usage: h3-tracker exclude <match_id> [--restore] [--confirm]\n";
+        return 1;
+    }
+
+    auto db = openDb(config().dbUrl, config().dbAuthToken);
+    std::vector<StoredMatch> matches = db->matchesChrono();
+    const StoredMatch* target = nullptr;
+    for (const auto& m : matches)
+        if (m.matchId == matchId) {
+            target = &m;
+            break;
+        }
+    if (!target) {
+        std::cout << "No match with id " << matchId << " found (of " << matches.size()
+                  << " total).\n";
+        return 1;
+    }
+
+    std::cout << "Target match (of " << matches.size() << " total):\n"
+              << "  match_id : " << target->matchId << "\n"
+              << "  gametype : " << target->gameTypeName << " (structural "
+              << categoryLabel(categorize(*target)) << ")\n"
+              << "  excluded : " << (target->excluded ? "true" : "false") << " -> "
+              << (!restore ? "true" : "false") << "\n"
+              << "  board    : " << categoryLabel(boardCategory(*target)) << " -> ";
+    StoredMatch preview = *target;
+    preview.excluded = !restore;
+    std::cout << categoryLabel(boardCategory(preview)) << "\n";
+
+    if (!confirm) {
+        std::cout << "\nDry run. Re-run with --confirm to " << (restore ? "re-include" : "exclude")
+                  << " this game and refresh the leaderboard.\n";
+        return 0;
+    }
+
+    db->setMatchExcluded(matchId, !restore);
+    std::cout << "\n" << (restore ? "Re-included" : "Excluded") << " match. " << db->matchCount()
+              << " matches recorded.\n";
+
+    // Re-style the #game-results post in place if its message id is tracked.
+    std::string msgId;
+    for (const auto& t : db->resultsRestyleTargets(0, /*force=*/true))
+        if (t.matchId == matchId) {
+            msgId = t.msgId;
+            break;
+        }
+    if (!msgId.empty()) {
+        std::cout << "[discord] result post " << restyleResultPost(*db, matchId, msgId) << ".\n";
+    } else {
+        std::cout << "[discord] no tracked #game-results post id \xE2\x80\x94 re-style by hand if "
+                     "needed.\n";
+    }
+
+    if (config().discordLeaderboardWebhookUrl) {
+        upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, *db);
+        std::cout << "[discord] leaderboard message refreshed.\n";
+    }
     return 0;
 }
 

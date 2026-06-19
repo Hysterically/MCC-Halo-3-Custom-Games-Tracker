@@ -34,6 +34,7 @@ export interface StoredMatch {
   mapName?: string;
   mapVariant?: string;
   durationSeconds?: number; // longest secondsPlayed; undefined on pre-tracking rows
+  excluded: boolean; // manually voided from the boards (off-format, still posted)
   players: {
     xuid: string;
     gamertag: string;
@@ -136,6 +137,11 @@ export async function openDb(url: string, authToken?: string): Promise<DB> {
   // Layout version of the #game-results post (RESULTS_FMT_VERSION at post time).
   // NULL = posted by an older build / never stamped → eligible for re-styling.
   await db.execute("ALTER TABLE matches ADD COLUMN results_fmt INTEGER").catch(() => {});
+  // Manually-voided flag: 1 = excluded from every leaderboard (forced off-format)
+  // while the match + its #game-results post are kept. 0 / NULL = counts normally.
+  await db
+    .execute("ALTER TABLE matches ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0")
+    .catch(() => {});
 
   return db;
 }
@@ -265,7 +271,7 @@ export async function matchesChrono(db: DB): Promise<StoredMatch[]> {
   // Two bulk queries (not N+1) keep this cheap over a remote DB.
   const matchesRes = await db.execute(
     `SELECT match_id, game_type, teams_enabled, played_at, winning_team_id, map_name, map_variant,
-            duration_seconds
+            duration_seconds, excluded
        FROM matches ORDER BY played_at ASC, recorded_at ASC`,
   );
   const playersRes = await db.execute(
@@ -299,6 +305,7 @@ export async function matchesChrono(db: DB): Promise<StoredMatch[]> {
     mapName: m.map_name == null ? undefined : String(m.map_name),
     mapVariant: m.map_variant == null ? undefined : String(m.map_variant),
     durationSeconds: m.duration_seconds == null ? undefined : num(m.duration_seconds),
+    excluded: !!num(m.excluded),
     players: byMatch.get(String(m.match_id)) ?? [],
   }));
 }
@@ -385,6 +392,20 @@ export async function resultsRestyleTargets(
 export async function recordedAtByMatch(db: DB): Promise<Map<string, number>> {
   const res = await db.execute("SELECT match_id, recorded_at FROM matches");
   return new Map(res.rows.map((r) => [String(r.match_id), num(r.recorded_at)]));
+}
+
+/**
+ * Flag (or un-flag) a match as excluded: when set, boardCategory() forces it to
+ * "other" so it drops off every leaderboard (CSR recomputes from history) while
+ * the match row and its #game-results post are kept. Reversible.
+ */
+export async function setMatchExcluded(db: DB, matchId: string, excluded: boolean): Promise<void> {
+  await serializeWrite(() =>
+    db.execute({
+      sql: "UPDATE matches SET excluded = ? WHERE match_id = ?",
+      args: [excluded ? 1 : 0, matchId],
+    }),
+  );
 }
 
 /** Delete a match and its players (match_players cascades via ON DELETE CASCADE). Returns rows removed. */

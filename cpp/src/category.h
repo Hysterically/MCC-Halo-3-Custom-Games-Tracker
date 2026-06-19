@@ -79,11 +79,15 @@ Category categorize(const M& m) {
 
 // Leaderboard classification: structural categorize(), except a game shorter
 // than minSeconds is forced to Other so aborted / no-contest games never reach a
-// board. The categorizer every board and per-match tag goes through; categorize()
-// stays the pure structural one. Works for CarnageReport and StoredMatch (both
-// expose an optional `.durationSeconds`). Mirrors boardCategory in src/category.ts.
+// board. A game explicitly flagged `excluded` is likewise forced to Other — the
+// manual lever for voiding a game from every board while keeping its post. The
+// categorizer every board and per-match tag goes through; categorize() stays the
+// pure structural one. Works for CarnageReport and StoredMatch (both expose
+// `.excluded` and an optional `.durationSeconds`). Mirrors boardCategory in
+// src/category.ts.
 template <class M>
 Category boardCategory(const M& m, long long minSeconds = MIN_LEADERBOARD_SECONDS) {
+    if (m.excluded) return Category::Other;
     if (m.durationSeconds.has_value() && *m.durationSeconds < minSeconds) return Category::Other;
     return categorize(m);
 }

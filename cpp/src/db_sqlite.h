@@ -28,6 +28,7 @@ public:
     void setMatchResultsMsg(const std::string& matchId, const std::string& msgId) override;
     std::optional<std::string> matchIdByResultsMsg(const std::string& msgId) override;
     long long deleteMatch(const std::string& matchId) override;
+    void setMatchExcluded(const std::string& matchId, bool excluded) override;
     void setMatchResultsFmt(const std::string& matchId, int version) override;
     void clearMatchResultsMsg(const std::string& matchId) override;
     std::vector<RestyleTarget> resultsRestyleTargets(int version, bool force) override;

@@ -28,11 +28,13 @@ import {
   matchesChrono,
   matchIdByResultsMsg,
   deleteMatch,
+  setMatchExcluded,
   kvGet,
   kvClaim,
   kvCas,
   kvDelete,
 } from "./db.ts";
+import { restyleResultPost } from "./heal.ts";
 import { computeRatings, type EloChange, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import {
@@ -816,6 +818,22 @@ const COMMANDS = [
         .setDescription("The #game-results message id (or its Copy Message Link URL)")
         .setRequired(true),
     ),
+  new SlashCommandBuilder()
+    .setName("exclude")
+    .setDescription("Drop a game from the boards but keep its post (off-format) — give its message id")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addStringOption((o) =>
+      o
+        .setName("game")
+        .setDescription("The #game-results message id (or its Copy Message Link URL)")
+        .setRequired(true),
+    )
+    .addBooleanOption((o) =>
+      o
+        .setName("restore")
+        .setDescription("Undo: count the game again (default false)")
+        .setRequired(false),
+    ),
 ].map((c) => c.toJSON());
 
 export async function startBot(
@@ -858,6 +876,8 @@ export async function startBot(
         }
       } else if (ix.commandName === "delete") {
         await handleDelete(ix, db, resultsWebhookUrl, leaderboardWebhookUrl);
+      } else if (ix.commandName === "exclude") {
+        await handleExclude(ix, db, leaderboardWebhookUrl);
       }
     } catch (e) {
       console.error("[discord] command error:", e);
@@ -907,4 +927,70 @@ async function handleDelete(
   }
 
   await ix.reply(`🗑️ Voided ${summary}. ${await matchCount(db)} matches remain.`);
+
+  // Deleting a game shifts the CSR timeline for every later match, so the frozen
+  // change labels on those #game-results posts are now stale. Force-re-style all
+  // tracked posts in the background so they resync with the recomputed CSR — no
+  // manual `restyle` needed. Best-effort; the reply already went out, so the
+  // rate-limited edits run detached. Dynamic import avoids a heal.ts ↔ discord.ts
+  // import cycle.
+  void (async () => {
+    try {
+      const { healStaleResults } = await import("./heal.ts");
+      await healStaleResults(db, { force: true, log: (m) => console.log("[heal]", m) });
+    } catch (e) {
+      console.error("[discord] post-delete restyle failed:", (e as Error).message);
+    }
+  })();
+}
+
+/**
+ * Exclude (or, with `restore`, re-include) a game referenced by its
+ * #game-results post: flip the match's excluded flag so it drops off / rejoins
+ * every board (CSR recomputes from history), re-style its post in place to the
+ * off-format / counted caption, and refresh the live leaderboard. Unlike
+ * `/delete`, the match and its post are kept. Gated to Manage Server.
+ */
+async function handleExclude(
+  ix: ChatInputCommandInteraction,
+  db: DB,
+  leaderboardWebhookUrl?: string,
+): Promise<void> {
+  const msgId = extractMessageId(ix.options.getString("game", true));
+  if (!msgId) {
+    await ix.reply("That doesn't look like a message id or link.");
+    return;
+  }
+  const restore = ix.options.getBoolean("restore") ?? false;
+
+  const matchId = await matchIdByResultsMsg(db, msgId);
+  if (!matchId) {
+    await ix.reply(
+      "No tracked game found for that post — it may predate message tracking. " +
+        "Use the `exclude-match` CLI on the host for older games.",
+    );
+    return;
+  }
+
+  const target = (await matchesChrono(db)).find((m) => m.matchId === matchId);
+  const summary = target ? matchSummary(target) : `match \`${matchId}\``;
+
+  await setMatchExcluded(db, matchId, !restore);
+  // Re-style the post in place so its caption flips to/from "Off-format".
+  try {
+    await restyleResultPost(db, matchId, msgId);
+  } catch (e) {
+    console.error("[discord] result re-style after exclude failed:", (e as Error).message);
+  }
+  try {
+    await upsertCsrLeaderboard(leaderboardWebhookUrl, db);
+  } catch (e) {
+    console.error("[discord] leaderboard refresh after exclude failed:", (e as Error).message);
+  }
+
+  await ix.reply(
+    restore
+      ? `✅ Restored ${summary} — it counts toward the leaderboard again.`
+      : `🚫 Excluded ${summary} from the leaderboards (kept as an off-format post).`,
+  );
 }
