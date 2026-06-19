@@ -63,21 +63,22 @@ const GROUP_GAP = 10; // gap between label / emblem / number
 const STAT_LABELS = ["W-L-D", "WIN%", "K/D", "PEAK CSR"] as const;
 
 /**
- * Champion = the #1 row on a board whose CSR has cleared the Champion floor.
- * It's position-based, so it depends on the row's rank, not just its skill.
+ * Champion = a top-3 row on a board whose CSR has cleared the Champion floor.
+ * It's position-based, so it depends on the row's rank, not just its skill — up to
+ * three players (ranks 1-3) can be champions, each only if individually at/above the floor.
  */
 function isChampion(rankIndex: number, skill: number): boolean {
-  return rankIndex === 0 && csrFromSkill(skill).value >= CHAMPION_THRESHOLD;
+  return rankIndex <= 2 && csrFromSkill(skill).value >= CHAMPION_THRESHOLD;
 }
 
-/** The rank label: lowercase "tier sub" / "onyx", or "champion" for the #1≥floor. */
+/** The rank label: lowercase "tier sub" / "onyx", or "champion" for a top-3≥floor row. */
 function rankLabel(skill: number, rankIndex = -1): string {
   if (isChampion(rankIndex, skill)) return "champion";
   const c = csrFromSkill(skill);
   return c.isOnyx ? "onyx" : `${c.tier.toLowerCase()} ${c.sub}`;
 }
 
-/** Emblem key for a row: the Halo 5 Champion insignia for #1≥floor, else the tier. */
+/** Emblem key for a row: the Halo 5 Champion insignia for a top-3≥floor row, else the tier. */
 function rowEmblem(skill: number, rankIndex: number): string {
   return isChampion(rankIndex, skill) ? "champion" : csrFromSkill(skill).emblem;
 }

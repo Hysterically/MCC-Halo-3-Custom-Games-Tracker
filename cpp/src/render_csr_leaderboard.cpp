@@ -137,7 +137,7 @@ std::unique_ptr<Bitmap> loadMedal(const MedalAsset& asset) {
 
 // --- CSR row helpers (mirror renderCsrLeaderboard.ts) ------------------------
 bool isChampion(int rankIndex, double skill) {
-    return rankIndex == 0 && csrFromSkill(skill).value >= CHAMPION_THRESHOLD;
+    return rankIndex <= 2 && csrFromSkill(skill).value >= CHAMPION_THRESHOLD;
 }
 std::string rankLabel(double skill, int rankIndex) {
     if (isChampion(rankIndex, skill)) return "champion";
