@@ -19,5 +19,6 @@ int cmdGwProbe();                                          // debug: probe Disco
 int cmdClear();
 int cmdAnnounce();
 int cmdRestyle(const std::vector<std::string>& args);  // force re-style all #game-results posts
+int cmdExclude(const std::vector<std::string>& args);  // exclude/restore a match from the boards
 int cmdWatch();
 int cmdSetup(bool force);

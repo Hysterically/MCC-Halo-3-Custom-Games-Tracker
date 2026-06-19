@@ -33,6 +33,7 @@ struct StoredMatch {
     std::string mapName;     // "" if unknown
     std::string mapVariant;  // "" if unknown
     std::optional<long long> durationSeconds;  // empty on pre-tracking rows (= always count)
+    bool excluded = false;  // manually voided from the boards (off-format, still posted)
     std::vector<StoredPlayer> players;
 };
 
@@ -73,6 +74,9 @@ public:
     virtual std::optional<std::string> matchIdByResultsMsg(const std::string& msgId) = 0;
     // Delete a match and its players (match_players cascades). Returns rows removed.
     virtual long long deleteMatch(const std::string& matchId) = 0;
+    // Flag (or un-flag) a match as excluded: boardCategory() forces it to Other
+    // so it drops off every leaderboard while the match + post are kept. Reversible.
+    virtual void setMatchExcluded(const std::string& matchId, bool excluded) = 0;
 
     // Stamp the layout version a match's #game-results post was last rendered at.
     virtual void setMatchResultsFmt(const std::string& matchId, int version) = 0;

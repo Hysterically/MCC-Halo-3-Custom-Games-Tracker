@@ -30,6 +30,7 @@
 #include "config.h"
 #include "discord_webhook.h"
 #include "format.h"
+#include "heal.h"
 #include "http.h"
 #include "render_csr_leaderboard.h"
 
@@ -148,7 +149,22 @@ private:
                json::array({{{"name", "game"},
                              {"description", "The #game-results message id (or its link)"},
                              {"type", 3},
-                             {"required", true}}})}}});
+                             {"required", true}}})}},
+             {{"name", "exclude"},
+              {"description",
+               "Drop a game from the boards but keep its post (off-format) \xE2\x80\x94 give its "
+               "message id"},
+              {"type", 1},
+              {"default_member_permissions", "32"},
+              {"options",
+               json::array({{{"name", "game"},
+                             {"description", "The #game-results message id (or its link)"},
+                             {"type", 3},
+                             {"required", true}},
+                            {{"name", "restore"},
+                             {"description", "Undo: count the game again (default false)"},
+                             {"type", 5},
+                             {"required", false}}})}}});
         std::string path = config().discordGuildId
                                ? "/applications/" + appId_ + "/guilds/" +
                                      *config().discordGuildId + "/commands"
@@ -363,8 +379,66 @@ private:
             std::cerr << "[discord] leaderboard refresh after delete failed: " << e.what() << "\n";
         }
 
+        // Deleting a game shifts the CSR timeline for every later match, so the
+        // frozen change labels on those #game-results posts are now stale.
+        // Force-re-style all tracked posts in the background so they resync with
+        // the recomputed CSR — no manual `restyle` needed. Best-effort; detached
+        // so the interaction reply isn't held up by the rate-limited edits.
+        std::thread([&db = db_] {
+            try {
+                healStaleResults(db, /*force=*/true);
+            } catch (const std::exception& e) {
+                std::cerr << "[discord] post-delete restyle failed: " << e.what() << "\n";
+            }
+        }).detach();
+
         return "\xF0\x9F\x97\x91\xEF\xB8\x8F Voided " + summary + ". " +
                std::to_string(db_.matchCount()) + " matches remain.";
+    }
+
+    // Exclude (or, with restore=true, re-include) a game referenced by its
+    // #game-results post: flip the match's excluded flag so it drops off /
+    // rejoins every board (CSR recomputes from history), re-style its post in
+    // place, and refresh the live leaderboard. The match + post are kept.
+    std::string handleExclude(const json& d) {
+        std::string raw;
+        bool restore = false;
+        if (d.contains("data") && d["data"].contains("options"))
+            for (const auto& o : d["data"]["options"]) {
+                if (o.value("name", "") == "game") raw = o.value("value", "");
+                if (o.value("name", "") == "restore") restore = o.value("value", false);
+            }
+        std::string msgId = extractMessageId(raw);
+        if (msgId.empty()) return "That doesn't look like a message id or link.";
+
+        std::optional<std::string> matchId = db_.matchIdByResultsMsg(msgId);
+        if (!matchId)
+            return "No tracked game found for that post \xE2\x80\x94 it may predate message "
+                   "tracking. Use the `exclude-match` CLI on the host for older games.";
+
+        std::string summary = "match `" + *matchId + "`";
+        for (const auto& m : db_.matchesChrono())
+            if (m.matchId == *matchId) {
+                summary = matchSummary(m);
+                break;
+            }
+
+        db_.setMatchExcluded(*matchId, !restore);
+        try {
+            restyleResultPost(db_, *matchId, msgId);
+        } catch (const std::exception& e) {
+            std::cerr << "[discord] result re-style after exclude failed: " << e.what() << "\n";
+        }
+        try {
+            upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, db_);
+        } catch (const std::exception& e) {
+            std::cerr << "[discord] leaderboard refresh after exclude failed: " << e.what() << "\n";
+        }
+
+        return restore ? "\xE2\x9C\x85 Restored " + summary +
+                             " \xE2\x80\x94 it counts toward the leaderboard again."
+                       : "\xF0\x9F\x9A\xAB Excluded " + summary +
+                             " from the leaderboards (kept as an off-format post).";
     }
 
     void handleInteraction(const json& d) {
@@ -391,6 +465,8 @@ private:
                           " tracked Halo 3 custom matches recorded.";
             } else if (name == "delete") {
                 content = handleDelete(d);
+            } else if (name == "exclude") {
+                content = handleExclude(d);
             }
         } catch (const std::exception& e) {
             std::cerr << "[discord] command error: " << e.what() << "\n";

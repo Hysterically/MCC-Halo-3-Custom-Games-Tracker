@@ -133,6 +133,10 @@ DbSqlite::DbSqlite(const std::string& path) {
     // NULL = posted by an older build / never stamped → eligible for re-styling.
     sqlite3_exec(db_, "ALTER TABLE matches ADD COLUMN results_fmt INTEGER", nullptr, nullptr,
                  nullptr);
+    // Manually-voided flag: 1 = excluded from every leaderboard (forced off-format)
+    // while the match + its #game-results post are kept. 0 / NULL = counts normally.
+    sqlite3_exec(db_, "ALTER TABLE matches ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0", nullptr,
+                 nullptr, nullptr);
 }
 
 DbSqlite::~DbSqlite() {
@@ -262,7 +266,7 @@ std::vector<StoredMatch> DbSqlite::matchesChrono() {
     std::vector<StoredMatch> out;
     Stmt s(db_,
            "SELECT match_id, game_type, teams_enabled, played_at, winning_team_id, "
-           "map_name, map_variant, duration_seconds "
+           "map_name, map_variant, duration_seconds, excluded "
            "FROM matches ORDER BY played_at ASC, recorded_at ASC");
     while (s.step()) {
         StoredMatch m;
@@ -274,6 +278,7 @@ std::vector<StoredMatch> DbSqlite::matchesChrono() {
         m.mapName = s.text(5);
         m.mapVariant = s.text(6);
         if (!s.isNull(7)) m.durationSeconds = s.i64(7);
+        m.excluded = s.i64(8) != 0;
         auto it = byMatch.find(m.matchId);
         if (it != byMatch.end()) m.players = it->second;
         out.push_back(std::move(m));
@@ -313,6 +318,13 @@ long long DbSqlite::deleteMatch(const std::string& matchId) {
     s.bind({matchId});
     s.step();
     return sqlite3_changes(db_);
+}
+
+void DbSqlite::setMatchExcluded(const std::string& matchId, bool excluded) {
+    std::lock_guard<std::mutex> lk(writeMtx_);
+    Stmt s(db_, "UPDATE matches SET excluded = ? WHERE match_id = ?");
+    s.bind({static_cast<long long>(excluded ? 1 : 0), matchId});
+    s.step();
 }
 
 void DbSqlite::setMatchResultsFmt(const std::string& matchId, int version) {
