@@ -34,6 +34,8 @@ set(H3_SOURCES
   src/csr_gfx.cpp
   src/discord_webhook.cpp
   src/discord_gateway.cpp
+  src/heal.cpp
+  src/update_check.cpp
   src/watcher.cpp
   src/setup.cpp
   src/cli.cpp
@@ -44,6 +46,12 @@ target_include_directories(h3-tracker PRIVATE src)
 # Tells db.cpp / cli.cpp the real remote-DB and gateway backends are linked, so
 # they drop their throw-stubs.
 target_compile_definitions(h3-tracker PRIVATE H3_HAVE_HRANA=1 H3_HAVE_GATEWAY=1)
+# The build's version string for the outdated-build check. Passed in by the
+# release path (build.bat / bundle.bat set H3_VERSION from the git tag); a plain
+# dev build leaves it "dev", which keeps the update check silent (see version.h).
+if(DEFINED H3_VERSION AND NOT H3_VERSION STREQUAL "")
+  target_compile_definitions(h3-tracker PRIVATE H3_VERSION_STR="${H3_VERSION}")
+endif()
 target_link_libraries(h3-tracker PRIVATE
   pugixml::pugixml
   unofficial::sqlite3::sqlite3

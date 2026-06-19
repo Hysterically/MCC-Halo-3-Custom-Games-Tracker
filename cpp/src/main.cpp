@@ -59,6 +59,7 @@ int main(int argc, char** argv) {
         if (cmd == "board") return cmdBoard();
         if (cmd == "announce") return cmdAnnounce();
         if (cmd == "clear") return cmdClear();
+        if (cmd == "restyle") return cmdRestyle(rest);
         if (cmd == "parse") return cmdParse(rest);
         if (cmd == "inspect") return cmdInspect(rest);
         if (cmd == "show") return cmdShow(rest);

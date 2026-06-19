@@ -18,5 +18,6 @@ int cmdCurlInfo();                                          // debug: curl/TLS/p
 int cmdGwProbe();                                          // debug: probe Discord gateway (HELLO)
 int cmdClear();
 int cmdAnnounce();
+int cmdRestyle(const std::vector<std::string>& args);  // force re-style all #game-results posts
 int cmdWatch();
 int cmdSetup(bool force);

@@ -129,6 +129,10 @@ DbSqlite::DbSqlite(const std::string& path) {
     // voided by referencing its post. NULL on rows posted before this existed.
     sqlite3_exec(db_, "ALTER TABLE matches ADD COLUMN results_msg_id TEXT", nullptr, nullptr,
                  nullptr);
+    // Layout version of the #game-results post (RESULTS_FMT_VERSION at post time).
+    // NULL = posted by an older build / never stamped → eligible for re-styling.
+    sqlite3_exec(db_, "ALTER TABLE matches ADD COLUMN results_fmt INTEGER", nullptr, nullptr,
+                 nullptr);
 }
 
 DbSqlite::~DbSqlite() {
@@ -309,6 +313,39 @@ long long DbSqlite::deleteMatch(const std::string& matchId) {
     s.bind({matchId});
     s.step();
     return sqlite3_changes(db_);
+}
+
+void DbSqlite::setMatchResultsFmt(const std::string& matchId, int version) {
+    std::lock_guard<std::mutex> lk(writeMtx_);
+    Stmt s(db_, "UPDATE matches SET results_fmt = ? WHERE match_id = ?");
+    s.bind({static_cast<long long>(version), matchId});
+    s.step();
+}
+
+void DbSqlite::clearMatchResultsMsg(const std::string& matchId) {
+    std::lock_guard<std::mutex> lk(writeMtx_);
+    Stmt s(db_, "UPDATE matches SET results_msg_id = NULL, results_fmt = NULL WHERE match_id = ?");
+    s.bind({matchId});
+    s.step();
+}
+
+std::vector<RestyleTarget> DbSqlite::resultsRestyleTargets(int version, bool force) {
+    std::vector<RestyleTarget> out;
+    std::string sql =
+        force ? "SELECT match_id, results_msg_id FROM matches WHERE results_msg_id IS NOT NULL"
+              : "SELECT match_id, results_msg_id FROM matches WHERE results_msg_id IS NOT NULL "
+                "AND (results_fmt IS NULL OR results_fmt < ?)";
+    Stmt s(db_, sql);
+    if (!force) s.bind({static_cast<long long>(version)});
+    while (s.step()) out.push_back({s.text(0), s.text(1)});
+    return out;
+}
+
+std::unordered_map<std::string, long long> DbSqlite::recordedAtByMatch() {
+    std::unordered_map<std::string, long long> out;
+    Stmt s(db_, "SELECT match_id, recorded_at FROM matches");
+    while (s.step()) out[s.text(0)] = s.i64(1);
+    return out;
 }
 
 void DbSqlite::clearAll() {

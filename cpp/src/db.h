@@ -36,6 +36,12 @@ struct StoredMatch {
     std::vector<StoredPlayer> players;
 };
 
+// A tracked #game-results post that may need re-styling: its match + message id.
+struct RestyleTarget {
+    std::string matchId;
+    std::string msgId;
+};
+
 class Db {
 public:
     virtual ~Db() = default;
@@ -67,6 +73,16 @@ public:
     virtual std::optional<std::string> matchIdByResultsMsg(const std::string& msgId) = 0;
     // Delete a match and its players (match_players cascades). Returns rows removed.
     virtual long long deleteMatch(const std::string& matchId) = 0;
+
+    // Stamp the layout version a match's #game-results post was last rendered at.
+    virtual void setMatchResultsFmt(const std::string& matchId, int version) = 0;
+    // Forget a match's #game-results post id (e.g. the message was deleted / 404).
+    virtual void clearMatchResultsMsg(const std::string& matchId) = 0;
+    // #game-results posts whose layout is behind `version` (or, when `force`,
+    // every post with a known message id) — the work list for the startup heal.
+    virtual std::vector<RestyleTarget> resultsRestyleTargets(int version, bool force) = 0;
+    // match_id -> recorded_at (epoch ms). The pairing key for adopting legacy posts.
+    virtual std::unordered_map<std::string, long long> recordedAtByMatch() = 0;
 
     // Wipe all matches/players (used by the `clear` command). Keeps the kv row
     // holding the leaderboard message id so the same Discord message is reused.

@@ -22,13 +22,16 @@
 #include "discord_webhook.h"
 #include "elo.h"
 #include "format.h"
+#include "heal.h"
 #include "http.h"
 #include "mapinfo.h"
 #include "render_carnage.h"
 #include "render_csr_leaderboard.h"
 #include "render_leaderboard.h"
 #include "trueskill2.h"
+#include "update_check.h"
 #include "util.h"
+#include "version.h"
 #include "watcher.h"
 
 namespace fs = std::filesystem;
@@ -589,6 +592,27 @@ std::string matchLabel(const CarnageReport& r) {
 }
 }  // namespace
 
+int cmdRestyle(const std::vector<std::string>& args) {
+    bool apply = std::find(args.begin(), args.end(), "--apply") != args.end();
+    if (!config().discordResultsWebhookUrl) {
+        std::cerr << "No DISCORD_RESULTS_WEBHOOK_URL configured — set it in .env first.\n";
+        return 1;
+    }
+    auto db = openDb(config().dbUrl, config().dbAuthToken);
+    if (!apply) {
+        long long tracked = static_cast<long long>(db->resultsRestyleTargets(0, true).size());
+        std::cout << "[db] " << db->matchCount() << " matches recorded\n"
+                  << "[db] " << tracked << " matches already have a stored message id\n"
+                  << "\nDry run. Re-run with --apply to adopt orphan posts and re-style every "
+                     "#game-results post.\n";
+        return 0;
+    }
+    HealStats s = healStaleResults(*db, /*force=*/true);
+    std::cout << "\nDone: adopted " << s.adopted << ", re-styled " << s.restyled
+              << (s.gone ? ", " + std::to_string(s.gone) + " had vanished" : "") << ".\n";
+    return 0;
+}
+
 int cmdWatch() {
     auto db = openDb(config().dbUrl, config().dbAuthToken);
     std::cout << "[db] " << config().dbUrl << " \xE2\x80\x94 " << db->matchCount()
@@ -596,6 +620,10 @@ int cmdWatch() {
     std::cout << "[watch] tracking new matches in " << config().carnageDir << "\n";
 
     startBotIfConfigured(*db);
+
+    // Tell the user if their build is behind the latest release (best-effort,
+    // off the main thread so a slow GitHub doesn't delay startup).
+    std::thread updateThread(checkForUpdate);
 
     if (!config().discordResultsWebhookUrl)
         std::cout << "[discord] no DISCORD_RESULTS_WEBHOOK_URL \xE2\x80\x94 per-match posts "
@@ -611,6 +639,20 @@ int cmdWatch() {
         } catch (const std::exception& e) {
             std::cerr << "[discord] startup leaderboard refresh failed: " << e.what() << "\n";
         }
+    }
+
+    // Self-heal: re-style any #game-results posts left in an older layout by an
+    // outdated build. Off the main thread so the watcher goes live immediately;
+    // joined before exit so it never outlives the DB.
+    std::thread healThread;
+    if (config().discordResultsWebhookUrl) {
+        healThread = std::thread([&db] {
+            try {
+                healStaleResults(*db, /*force=*/false);
+            } catch (const std::exception& e) {
+                std::cerr << "[heal] startup re-style failed: " << e.what() << "\n";
+            }
+        });
     }
 
     std::unordered_map<std::string, long long> seen;
@@ -666,7 +708,11 @@ int cmdWatch() {
             // Capture the #game-results message id so the game can later be voided via /delete.
             std::string msgId = postCsrMatchResult(config().discordResultsWebhookUrl, *report,
                                                    csrChanges.empty() ? nullptr : &csrChanges);
-            if (!msgId.empty()) db->setMatchResultsMsg(report->matchId, msgId);
+            if (!msgId.empty()) {
+                db->setMatchResultsMsg(report->matchId, msgId);
+                // Stamp the layout version so the startup heal never re-styles a fresh post.
+                db->setMatchResultsFmt(report->matchId, RESULTS_FMT_VERSION);
+            }
         } catch (const std::exception& e) {
             std::cerr << "[discord] result post failed: " << e.what() << "\n";
         }
@@ -682,6 +728,9 @@ int cmdWatch() {
     std::cout.flush();
     watchDirectory(config().carnageDir, g_watchStop, onFile);
     std::cout << "\n[exit] closing\xE2\x80\xA6\n";
+    // Let the background tasks finish before the DB (which they hold by ref) dies.
+    if (updateThread.joinable()) updateThread.join();
+    if (healThread.joinable()) healThread.join();
     return 0;
 }
 
