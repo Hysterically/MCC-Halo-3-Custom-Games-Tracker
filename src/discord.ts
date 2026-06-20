@@ -48,7 +48,7 @@ import {
 import { displayName } from "./aliases.ts";
 import { renderCarnagePng, renderCarnageCsrPng } from "./renderCarnage.ts";
 import { renderLeaderboardPng, type BoardSection } from "./renderLeaderboard.ts";
-import { rateCategory, type CsrChange } from "./trueskill2.ts";
+import { rateCategory, type CsrChange, type MatchWinChances } from "./trueskill2.ts";
 import { renderCsrLeaderboardPng, type CsrRow } from "./renderCsrLeaderboard.ts";
 import { csrFromSkill, csrText } from "./csr.ts";
 
@@ -591,11 +591,12 @@ export async function postCsrMatchResult(
   url: string | undefined,
   report: CarnageReport,
   csrChanges?: Map<string, CsrChange>,
+  win?: MatchWinChances,
 ): Promise<string | undefined> {
   if (!url) return undefined;
   let png: Buffer | undefined;
   try {
-    png = await renderCarnageCsrPng(report, csrChanges);
+    png = await renderCarnageCsrPng(report, csrChanges, win);
   } catch (e) {
     console.warn("[discord] CSR carnage render failed, falling back to text:", (e as Error).message);
   }

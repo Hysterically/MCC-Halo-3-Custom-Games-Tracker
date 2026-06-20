@@ -11,6 +11,7 @@
 // conservative skill `mu - 3*sigma`, mapped to CSR by csr.h.
 #pragma once
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -52,3 +53,24 @@ struct CsrChange {
 // matchCsrChanges in src/trueskill2.ts.
 std::map<std::string, CsrChange> matchCsrChanges(const std::vector<StoredMatch>& matches,
                                                  const std::string& matchId);
+
+// Pre-match win probability + average CSR for one team of a rated 2-team match.
+struct TeamWinChance {
+    int teamId = 0;
+    int avgCsr = 0;     // mean of the team's rated players' pre-match CSR (rounded)
+    double winProb = 0;  // pre-match probability this team wins (the two sum to ~1)
+};
+
+// The two teams of a rated 2-team match, for the result-post win bar. Team [0] is
+// the winner, so the bar's left segment matches the board's winner-first ordering.
+struct MatchWinChances {
+    TeamWinChance teams[2];
+};
+
+// Per-team pre-match win probability + average CSR for the result-post win bar.
+// Computed from the ratings *before* this match using the TrueSkill team
+// performance model. Returns nullopt unless the match is on-format, has teams,
+// and groups into exactly two teams that each have a rated player. Mirrors
+// matchWinChances in src/trueskill2.ts.
+std::optional<MatchWinChances> matchWinChances(const std::vector<StoredMatch>& matches,
+                                               const std::string& matchId);

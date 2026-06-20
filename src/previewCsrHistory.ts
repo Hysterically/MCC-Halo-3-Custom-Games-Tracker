@@ -14,7 +14,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { config } from "./config.ts";
 import { openDb, matchesChrono, type StoredMatch } from "./db.ts";
 import { boardCategory, type Category } from "./category.ts";
-import { matchCsrChanges } from "./trueskill2.ts";
+import { matchCsrChanges, matchWinChances } from "./trueskill2.ts";
 import { renderCarnageCsrPng } from "./renderCarnage.ts";
 import { FONT } from "./fonts.ts";
 import type { CarnageReport } from "./parseCarnage.ts";
@@ -57,7 +57,8 @@ const tiles: { img: Awaited<ReturnType<typeof loadImage>>; label: string }[] = [
 for (let i = 0; i < matches.length; i++) {
   const m = matches[i];
   const changes = matchCsrChanges(all, m.matchId) ?? undefined;
-  const png = await renderCarnageCsrPng(toReport(m), changes);
+  const win = matchWinChances(all, m.matchId) ?? undefined;
+  const png = await renderCarnageCsrPng(toReport(m), changes, win);
   const date = new Date(m.playedAt).toISOString().slice(0, 16).replace("T", " ");
   const file = `${outDir}/${String(i + 1).padStart(3, "0")}-${m.gameTypeName.replace(/[^a-z0-9]+/gi, "-")}.png`;
   writeFileSync(file, png);

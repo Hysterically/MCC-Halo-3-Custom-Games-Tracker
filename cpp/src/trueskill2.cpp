@@ -607,3 +607,71 @@ std::map<std::string, CsrChange> matchCsrChanges(const std::vector<StoredMatch>&
     }
     return changes;
 }
+
+std::optional<MatchWinChances> matchWinChances(const std::vector<StoredMatch>& matches,
+                                               const std::string& matchId) {
+    size_t idx = matches.size();
+    for (size_t i = 0; i < matches.size(); ++i)
+        if (matches[i].matchId == matchId) {
+            idx = i;
+            break;
+        }
+    if (idx == matches.size()) return std::nullopt;
+    const StoredMatch& match = matches[idx];
+    if (!match.teamsEnabled) return std::nullopt;
+    Category cat = boardCategory(match);
+    if (cat == Category::Other) return std::nullopt;
+
+    std::vector<StoredMatch> hist;
+    for (size_t i = 0; i <= idx; ++i)
+        if (boardCategory(matches[i]) == cat) hist.push_back(matches[i]);
+    std::vector<StoredMatch> prior(hist.begin(), hist.end() - 1);
+
+    // Pre-match ratings (mu/sigma) — missing player falls back to the prior.
+    std::unordered_map<std::string, MMR> pre;
+    for (const MMR& r : rateCategory(prior)) pre[r.xuid] = r;
+
+    struct Agg {
+        int teamId = 0;
+        double mu = 0;
+        double variance = 0;
+        long long csrSum = 0;
+        int n = 0;
+    };
+    std::map<int, Agg> teams;  // by teamId
+    for (const auto& p : match.players) {
+        if (p.xuid.empty()) continue;  // unrated guest — not part of team rating
+        auto it = pre.find(p.xuid);
+        double mu = it != pre.end() ? it->second.mu : MU0;
+        double sigma = it != pre.end() ? it->second.sigma : SIGMA0;
+        Agg& t = teams[p.teamId];
+        t.teamId = p.teamId;
+        t.mu += mu;
+        t.variance += sigma * sigma + BETA * BETA;
+        t.csrSum += csrFromSkill(mu - 3 * sigma).value;
+        t.n += 1;
+    }
+    if (teams.size() != 2) return std::nullopt;
+
+    // Winner first so the bar's left segment matches the board's row ordering.
+    std::vector<Agg> arr;
+    for (auto& kv : teams) arr.push_back(kv.second);
+    const std::optional<int>& winning = match.winningTeamId;
+    std::stable_sort(arr.begin(), arr.end(), [&](const Agg& x, const Agg& y) {
+        if (winning) {
+            if (x.teamId == *winning) return true;
+            if (y.teamId == *winning) return false;
+        }
+        return x.teamId < y.teamId;
+    });
+    const Agg& A = arr[0];
+    const Agg& B = arr[1];
+    double probA = cdf((A.mu - B.mu) / std::sqrt(A.variance + B.variance));
+
+    MatchWinChances out;
+    out.teams[0] = {A.teamId, static_cast<int>(std::lround(static_cast<double>(A.csrSum) / A.n)),
+                    probA};
+    out.teams[1] = {B.teamId, static_cast<int>(std::lround(static_cast<double>(B.csrSum) / B.n)),
+                    1.0 - probA};
+    return out;
+}

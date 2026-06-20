@@ -199,12 +199,13 @@ void upsertLeaderboard(const std::optional<std::string>& url, Db& db, EloOptions
 // fails we fall back to the text scoreboard + a CSR line. ?wait=true captures the
 // created message id — the handle /delete uses to void a game.
 std::string postCsrMatchResult(const std::optional<std::string>& url, const CarnageReport& report,
-                               const std::map<std::string, CsrChange>* csrChanges) {
+                               const std::map<std::string, CsrChange>* csrChanges,
+                               const MatchWinChances* win) {
     if (!url) return "";
 
     std::vector<unsigned char> png;
     try {
-        png = renderCarnageCsrPng(report, csrChanges);
+        png = renderCarnageCsrPng(report, csrChanges, win);
     } catch (const std::exception& e) {
         std::cerr << "[discord] CSR carnage render failed, falling back to text: " << e.what()
                   << "\n";

@@ -23,7 +23,8 @@ std::string postMatchResult(const std::optional<std::string>& url, const Carnage
 // URL): the carnage-screen PNG with the CSR column, text fallback otherwise.
 // Returns the created Discord message id so the match can be voided via /delete.
 std::string postCsrMatchResult(const std::optional<std::string>& url, const CarnageReport& report,
-                               const std::map<std::string, CsrChange>* csrChanges = nullptr);
+                               const std::map<std::string, CsrChange>* csrChanges = nullptr,
+                               const MatchWinChances* win = nullptr);
 
 // DELETE an existing webhook message. Best-effort.
 void deleteWebhookMessage(const std::string& url, const std::string& messageId);

@@ -522,6 +522,20 @@ export function rateCategory(
 // Per-match CSR change (the analog of elo.ts' matchEloChanges).
 // ---------------------------------------------------------------------------
 
+/** Pre-match win-probability + average CSR for one team in a 2-team matchup. */
+export interface TeamWinChance {
+  teamId: number;
+  /** Mean of the team's rated players' pre-match CSR (rounded). */
+  avgCsr: number;
+  /** Pre-match probability this team wins (the two teams sum to ~1). */
+  winProb: number;
+}
+
+/** The two teams of a rated 2-team match, for the result-post win bar. */
+export interface MatchWinChances {
+  teams: [TeamWinChance, TeamWinChance];
+}
+
 /** A player's post-match CSR and the change (in CSR points) this match produced. */
 export interface CsrChange {
   /** Conservative skill mu - 3*sigma after this match. */
@@ -563,4 +577,68 @@ export function matchCsrChanges(
     changes.set(p.xuid, { skill: a, csr: csrAfter, delta: csrAfter.value - csrBefore.value });
   }
   return changes;
+}
+
+/**
+ * Pre-match win probability + average CSR for each team of a rated 2-team match,
+ * for the result-post win bar. Computed from the ratings *before* this match (the
+ * same pre-replay `matchCsrChanges` diffs against), using the TrueSkill team
+ * performance model: `teamMu = Σ μ`, `teamVar = Σ (σ² + β²)`, and
+ * `P(A) = Φ((teamMuA − teamMuB) / √(varA + varB))`. The team listed first is the
+ * winner (so the bar's left side matches the board's winner-first ordering).
+ *
+ * Returns null unless the match is on-format, has teams, and groups into exactly
+ * two teams that each have at least one rated player.
+ */
+export function matchWinChances(
+  matches: StoredMatch[],
+  matchId: string,
+): MatchWinChances | null {
+  const idx = matches.findIndex((m) => m.matchId === matchId);
+  if (idx === -1) return null;
+  const match = matches[idx];
+  if (!match.teamsEnabled) return null;
+  const cat = boardCategory(match);
+  if (cat === "other") return null;
+
+  const hist = matches.slice(0, idx + 1).filter((m) => boardCategory(m) === cat);
+  const pre = new Map(rateCategory(hist.slice(0, -1)).map((r) => [r.xuid, r]));
+
+  interface Agg {
+    teamId: number;
+    mu: number;
+    variance: number;
+    csrSum: number;
+    n: number;
+  }
+  const teams = new Map<number, Agg>();
+  for (const p of match.players) {
+    if (!p.xuid) continue; // unrated guest — not part of the team rating
+    const r = pre.get(p.xuid);
+    const mu = r?.mu ?? MU0;
+    const sigma = r?.sigma ?? SIGMA0;
+    const t = teams.get(p.teamId) ?? { teamId: p.teamId, mu: 0, variance: 0, csrSum: 0, n: 0 };
+    t.mu += mu;
+    t.variance += sigma * sigma + BETA * BETA;
+    t.csrSum += csrFromSkill(mu - 3 * sigma).value;
+    t.n += 1;
+    teams.set(p.teamId, t);
+  }
+  if (teams.size !== 2) return null;
+
+  // Winner first so the bar's left segment matches the board's row ordering.
+  const [A, B] = [...teams.values()].sort((x, y) => {
+    if (match.winningTeamId != null) {
+      if (x.teamId === match.winningTeamId) return -1;
+      if (y.teamId === match.winningTeamId) return 1;
+    }
+    return x.teamId - y.teamId;
+  });
+  const probA = cdf((A.mu - B.mu) / Math.sqrt(A.variance + B.variance));
+  return {
+    teams: [
+      { teamId: A.teamId, avgCsr: Math.round(A.csrSum / A.n), winProb: probA },
+      { teamId: B.teamId, avgCsr: Math.round(B.csrSum / B.n), winProb: 1 - probA },
+    ],
+  };
 }
