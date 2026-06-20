@@ -12,6 +12,7 @@ using std::min;
 #include <gdiplus.h>
 
 #include <climits>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -207,6 +208,114 @@ void drawTextRight(Graphics& g, const std::wstring& s, const PxFont& f, const Br
     drawText(g, s, f, brush, right - box.Width, baseline, fmt);
 }
 
+void drawTextCenter(Graphics& g, const std::wstring& s, const PxFont& f, const Brush& brush,
+                    float cx, float baseline, const StringFormat* fmt) {
+    drawText(g, s, f, brush, cx - measureW(g, s, f, fmt) / 2.0f, baseline, fmt);
+}
+
+// --- win-probability bar (mirrors drawWinBar in src/renderCarnage.ts) --------
+
+// Title-case team names (the bar reads "Blue Team Average CSR: …", unlike the
+// all-caps headline). Same order as TEAM_ROW_COLORS.
+const wchar_t* TEAM_NAMES_TC[8] = {L"Red",    L"Blue", L"Green", L"Orange",
+                                   L"Purple", L"Gold", L"Brown", L"Pink"};
+
+Color lighten(const Color& c, double amt = 0.35) {
+    auto f = [&](BYTE v) { return static_cast<BYTE>(std::lround(v + (255 - v) * amt)); };
+    return Color(f(c.GetR()), f(c.GetG()), f(c.GetB()));
+}
+
+// Rounded-rect path with a per-corner radius (0 = square corner). GraphicsPath
+// auto-connects consecutive segments with straight lines, so a zero-length line
+// just registers a square corner point.
+void addRoundRect(GraphicsPath& p, float x, float y, float w, float h, float tl, float tr, float br,
+                  float bl) {
+    p.StartFigure();
+    if (tl > 0) p.AddArc(x, y, 2 * tl, 2 * tl, 180, 90);
+    else p.AddLine(x, y, x, y);
+    if (tr > 0) p.AddArc(x + w - 2 * tr, y, 2 * tr, 2 * tr, 270, 90);
+    else p.AddLine(x + w, y, x + w, y);
+    if (br > 0) p.AddArc(x + w - 2 * br, y + h - 2 * br, 2 * br, 2 * br, 0, 90);
+    else p.AddLine(x + w, y + h, x + w, y + h);
+    if (bl > 0) p.AddArc(x, y + h - 2 * bl, 2 * bl, 2 * bl, 90, 90);
+    else p.AddLine(x, y + h, x, y + h);
+    p.CloseFigure();
+}
+
+void drawWinBar(Graphics& g, const MatchWinChances& win, const StringFormat* fmt) {
+    const TeamWinChance& A = win.teams[0];
+    const TeamWinChance& B = win.teams[1];
+
+    constexpr float BAR_W = 290, BAR_H = 14, BAR_TOP = 44, CAP_W = 16;
+    const float barRight = W - MARGIN;
+    const float barLeft = barRight - BAR_W;
+    const float split = barLeft + std::round(BAR_W * static_cast<float>(A.winProb));
+    const float r = BAR_H / 2.0f;
+    auto teamColor = [](int id) {
+        return (id >= 0 && id < 8) ? TEAM_ROW_COLORS[id] : FFA_ROW_COLOR;
+    };
+    auto teamName = [](int id) {
+        return std::wstring((id >= 0 && id < 8) ? TEAM_NAMES_TC[id] : L"Team");
+    };
+    const Color colA = teamColor(A.teamId);
+    const Color colB = teamColor(B.teamId);
+    const std::wstring nameA = teamName(A.teamId);
+    const std::wstring nameB = teamName(B.teamId);
+
+    PxFont labelFont(blenderFace(false), 11);
+    PxFont capFont(blenderFace(true), 10);
+    SolidBrush white(Color(0xff, 0xff, 0xff));
+
+    // Average-CSR line above each team's segment.
+    drawText(g, nameA + L" Team Average CSR: " + std::to_wstring(A.avgCsr), labelFont, white,
+             barLeft, BAR_TOP - 6, fmt);
+    drawTextRight(g, nameB + L" Team Average CSR: " + std::to_wstring(B.avgCsr), labelFont, white,
+                  barRight, BAR_TOP - 6, fmt);
+
+    // Two segments meeting flush at the split: outer ends rounded, inner square.
+    {
+        GraphicsPath path;
+        addRoundRect(path, barLeft, BAR_TOP, split - barLeft, BAR_H, r, 0, 0, r);
+        SolidBrush brush(colA);
+        g.FillPath(&brush, &path);
+    }
+    {
+        GraphicsPath path;
+        addRoundRect(path, split, BAR_TOP, barRight - split, BAR_H, 0, r, r, 0);
+        SolidBrush brush(colB);
+        g.FillPath(&brush, &path);
+    }
+    {
+        SolidBrush seam(Color(102, 0, 0, 0));  // rgba(0,0,0,0.4)
+        g.FillRectangle(&seam, split - 1, BAR_TOP, 2.0f, BAR_H);
+    }
+
+    // Brighter end caps with the team initial.
+    auto cap = [&](float x, const Color& color, const std::wstring& letter) {
+        GraphicsPath path;
+        addRoundRect(path, x, BAR_TOP - 1, CAP_W, BAR_H + 2, 5, 5, 5, 5);
+        SolidBrush brush(color);
+        g.FillPath(&brush, &path);
+        drawTextCenter(g, letter, capFont, white, x + CAP_W / 2.0f, BAR_TOP + BAR_H / 2.0f + 4, fmt);
+    };
+    cap(barLeft, lighten(colA), nameA.substr(0, 1));
+    cap(barRight - CAP_W, lighten(colB), nameB.substr(0, 1));
+
+    // Label row beneath: "<Blue> 58%   Chances of Winning   42% <Red>".
+    const float labelY = BAR_TOP + BAR_H + 14;
+    SolidBrush blueTint(Color(0xcf, 0xe0, 0xfb));
+    SolidBrush redTint(Color(0xf6, 0xcd, 0xca));
+    SolidBrush grayTint(Color(0x8a, 0x93, 0x9e));
+    int pctA = static_cast<int>(std::lround(A.winProb * 100));
+    int pctB = static_cast<int>(std::lround(B.winProb * 100));
+    drawText(g, nameA + L" " + std::to_wstring(pctA) + L"%", labelFont, blueTint, barLeft, labelY,
+             fmt);
+    drawTextRight(g, std::to_wstring(pctB) + L"% " + nameB, labelFont, redTint, barRight, labelY,
+                  fmt);
+    drawTextCenter(g, L"Chances of Winning", labelFont, grayTint, (barLeft + barRight) / 2.0f,
+                   labelY, fmt);
+}
+
 }  // namespace
 
 std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& r,
@@ -350,7 +459,8 @@ std::vector<std::uint8_t> renderCarnagePng(const CarnageReport& r,
 }
 
 std::vector<std::uint8_t> renderCarnageCsrPng(const CarnageReport& r,
-                                              const std::map<std::string, CsrChange>* csrChanges) {
+                                              const std::map<std::string, CsrChange>* csrChanges,
+                                              const MatchWinChances* win) {
     ensureGdiplus();
 
     std::vector<CarnagePlayer> players = orderedPlayers(r);
@@ -402,6 +512,9 @@ std::vector<std::uint8_t> renderCarnageCsrPng(const CarnageReport& r,
     if (!r.mapName.empty()) subtitle += L" ON " + widen(r.mapName);
     drawText(g, upper(subtitle), subtitleFont, subtitleBrush, MARGIN + titleW + 26, TITLE_BASELINE,
              fmt);
+
+    // Win-probability bar (top-right) — only for rated 2-team matches.
+    if (win) drawWinBar(g, *win, fmt);
 
     // Column headers — all left-aligned at their column's x (CSR included).
     drawText(g, L"PLAYERS", headerFont, headerBrush, MARGIN + 2, HEADER_BASELINE, fmt);

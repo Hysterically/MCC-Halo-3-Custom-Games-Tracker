@@ -27,7 +27,7 @@ import {
   setMatchResultsMsg,
   setMatchResultsFmt,
 } from "./db.ts";
-import { matchCsrChanges, type CsrChange } from "./trueskill2.ts";
+import { matchCsrChanges, matchWinChances, type CsrChange, type MatchWinChances } from "./trueskill2.ts";
 import { parseCarnageFile, type CarnageReport } from "./parseCarnage.ts";
 import { findMapInfo } from "./mapInfo.ts";
 import { postCsrMatchResult, upsertCsrLeaderboard, startBot } from "./discord.ts";
@@ -146,8 +146,10 @@ async function onFile(path: string): Promise<void> {
   // Best effort: a DB hiccup just posts the result without the ratings.
   const history = await matchesChrono(db);
   let csrChanges: Map<string, CsrChange> | null = null;
+  let winChances: MatchWinChances | null = null;
   try {
     csrChanges = matchCsrChanges(history, report.matchId);
+    winChances = matchWinChances(history, report.matchId);
   } catch (e) {
     console.error("[ts2] CSR change computation failed:", (e as Error).message);
   }
@@ -158,6 +160,7 @@ async function onFile(path: string): Promise<void> {
       config.discordResultsWebhookUrl,
       report,
       csrChanges ?? undefined,
+      winChances ?? undefined,
     );
     if (msgId) {
       await setMatchResultsMsg(db, report.matchId, msgId);

@@ -22,6 +22,9 @@ std::vector<std::uint8_t> renderCarnagePng(
 // post-match rank as its Halo 5 division emblem + the CSR number + a green/red
 // change, e.g. "[◆] 1427 +31". Uses the embedded Blender Pro typeface.
 // `csrChanges` (xuid -> post-match CSR + change, nullable); with none/empty it
-// renders without the column. Mirrors renderCarnageCsrPng in src/renderCarnage.ts.
+// renders without the column. `win` (nullable) adds the top-right win-probability
+// bar (team-coloured split + average CSR) for rated 2-team matches. Mirrors
+// renderCarnageCsrPng in src/renderCarnage.ts.
 std::vector<std::uint8_t> renderCarnageCsrPng(
-    const CarnageReport& report, const std::map<std::string, CsrChange>* csrChanges = nullptr);
+    const CarnageReport& report, const std::map<std::string, CsrChange>* csrChanges = nullptr,
+    const MatchWinChances* win = nullptr);

@@ -8,7 +8,7 @@
 // with this value (matches.results_fmt) and, on startup, re-renders any post
 // whose stamp is behind (see heal.cpp). Keep equal to RESULTS_FMT_VERSION in
 // src/version.ts.
-inline constexpr int RESULTS_FMT_VERSION = 1;
+inline constexpr int RESULTS_FMT_VERSION = 2;
 
 // This build's version string, stamped at compile time from the git tag by
 // build.bat (-DH3_VERSION_STR="vX.Y.Z"). "dev" for an unstamped local build —

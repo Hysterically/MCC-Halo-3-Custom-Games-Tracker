@@ -259,10 +259,11 @@ HealStats healStaleResults(Db& db, bool force) {
         auto it = byId.find(t.matchId);
         if (it == byId.end()) continue;  // match deleted between query and now
         std::map<std::string, CsrChange> changes = matchCsrChanges(chrono, t.matchId);
+        std::optional<MatchWinChances> win = matchWinChances(chrono, t.matchId);
         try {
             CarnageReport report = fromStoredMatch(*it->second);
-            std::vector<std::uint8_t> png =
-                renderCarnageCsrPng(report, changes.empty() ? nullptr : &changes);
+            std::vector<std::uint8_t> png = renderCarnageCsrPng(
+                report, changes.empty() ? nullptr : &changes, win ? &*win : nullptr);
             bool ok = editResultMessage(*webhook, t.msgId, formatMatchCaption(report), png);
             if (ok) {
                 db.setMatchResultsFmt(t.matchId, RESULTS_FMT_VERSION);
@@ -296,9 +297,10 @@ std::string restyleResultPost(Db& db, const std::string& matchId, const std::str
     if (!match) return "skipped";
 
     std::map<std::string, CsrChange> changes = matchCsrChanges(chrono, matchId);
+    std::optional<MatchWinChances> win = matchWinChances(chrono, matchId);
     CarnageReport report = fromStoredMatch(*match);
     std::vector<std::uint8_t> png =
-        renderCarnageCsrPng(report, changes.empty() ? nullptr : &changes);
+        renderCarnageCsrPng(report, changes.empty() ? nullptr : &changes, win ? &*win : nullptr);
     bool ok = editResultMessage(*webhook, msgId, formatMatchCaption(report), png);
     if (ok) {
         db.setMatchResultsFmt(matchId, RESULTS_FMT_VERSION);

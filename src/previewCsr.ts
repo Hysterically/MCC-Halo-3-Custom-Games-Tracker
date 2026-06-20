@@ -8,7 +8,7 @@ import { writeFileSync } from "node:fs";
 import { config } from "./config.ts";
 import { openDb, matchesChrono, type StoredMatch } from "./db.ts";
 import { boardCategory } from "./category.ts";
-import { matchCsrChanges, rateCategory } from "./trueskill2.ts";
+import { matchCsrChanges, matchWinChances, rateCategory } from "./trueskill2.ts";
 import { renderCarnageCsrPng } from "./renderCarnage.ts";
 import { renderCsrLeaderboardPng } from "./renderCsrLeaderboard.ts";
 import type { CarnageReport } from "./parseCarnage.ts";
@@ -56,7 +56,8 @@ const latest = [...all].reverse().find((m) => boardCategory(m) === cat);
 if (!latest) throw new Error(`no ${cat} match found`);
 
 const changes = matchCsrChanges(all, latest.matchId) ?? undefined;
-const png = await renderCarnageCsrPng(toReport(latest), changes);
+const win = matchWinChances(all, latest.matchId) ?? undefined;
+const png = await renderCarnageCsrPng(toReport(latest), changes, win);
 writeFileSync("preview-csr.png", png);
 console.log(
   `Wrote preview-csr.png — ${latest.gameTypeName} (${cat}), ${latest.players.length} players, ${changes?.size ?? 0} rated`,

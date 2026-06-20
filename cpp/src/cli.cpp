@@ -421,6 +421,38 @@ std::map<std::string, CsrChange> sampleCsrChanges(const CarnageReport& r) {
     }
     return d;
 }
+
+// Plausible per-team win bar (avg CSR from the sample CSR changes) for the sample
+// render/post. Mirrors sampleWinChances in src/sampleReports.ts.
+std::optional<MatchWinChances> sampleWinChances(const CarnageReport& r) {
+    if (!r.teamsEnabled || !r.winningTeamId) return std::nullopt;
+    std::map<std::string, CsrChange> csr = sampleCsrChanges(r);
+    struct Agg {
+        long long sum = 0;
+        int n = 0;
+    };
+    std::map<int, Agg> agg;
+    for (const auto& p : r.players) {
+        auto it = csr.find(p.xuid);
+        if (it == csr.end()) continue;
+        Agg& a = agg[p.teamId];
+        a.sum += it->second.csr.value;
+        a.n += 1;
+    }
+    if (agg.size() != 2) return std::nullopt;
+    int winId = *r.winningTeamId;
+    std::vector<std::pair<int, Agg>> arr(agg.begin(), agg.end());
+    std::stable_sort(arr.begin(), arr.end(), [&](const auto& x, const auto& y) {
+        if (x.first == winId) return true;
+        if (y.first == winId) return false;
+        return x.first < y.first;
+    });
+    auto avg = [](const Agg& a) { return static_cast<int>((a.sum + a.n / 2) / a.n); };
+    MatchWinChances out;
+    out.teams[0] = {arr[0].first, avg(arr[0].second), 0.55};
+    out.teams[1] = {arr[1].first, avg(arr[1].second), 0.45};
+    return out;
+}
 }  // namespace
 
 int cmdRender(const std::vector<std::string>& args) {
@@ -439,8 +471,13 @@ int cmdRender(const std::vector<std::string>& args) {
     }
     std::string out = args.size() > 1 ? args[1] : "carnage.png";
     std::map<std::string, CsrChange> changes;
-    if (args[0] == "--sample") changes = sampleCsrChanges(r);
-    std::vector<unsigned char> png = renderCarnageCsrPng(r, changes.empty() ? nullptr : &changes);
+    std::optional<MatchWinChances> win;
+    if (args[0] == "--sample") {
+        changes = sampleCsrChanges(r);
+        win = sampleWinChances(r);
+    }
+    std::vector<unsigned char> png =
+        renderCarnageCsrPng(r, changes.empty() ? nullptr : &changes, win ? &*win : nullptr);
     if (!util::writeFile(out, std::string(png.begin(), png.end()))) {
         std::cerr << "could not write " << out << "\n";
         return 1;
@@ -769,8 +806,11 @@ int cmdWatch() {
         // the recorded history, so it matches exactly what the leaderboard
         // will apply. Best effort: a DB hiccup just posts without the ratings.
         std::map<std::string, CsrChange> csrChanges;
+        std::optional<MatchWinChances> winChances;
         try {
-            csrChanges = matchCsrChanges(db->matchesChrono(), report->matchId);
+            std::vector<StoredMatch> chrono = db->matchesChrono();
+            csrChanges = matchCsrChanges(chrono, report->matchId);
+            winChances = matchWinChances(chrono, report->matchId);
         } catch (const std::exception& e) {
             std::cerr << "[ts2] CSR change computation failed: " << e.what() << "\n";
         }
@@ -778,7 +818,8 @@ int cmdWatch() {
         try {
             // Capture the #game-results message id so the game can later be voided via /delete.
             std::string msgId = postCsrMatchResult(config().discordResultsWebhookUrl, *report,
-                                                   csrChanges.empty() ? nullptr : &csrChanges);
+                                                   csrChanges.empty() ? nullptr : &csrChanges,
+                                                   winChances ? &*winChances : nullptr);
             if (!msgId.empty()) {
                 db->setMatchResultsMsg(report->matchId, msgId);
                 // Stamp the layout version so the startup heal never re-styles a fresh post.

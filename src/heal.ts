@@ -35,7 +35,7 @@ import {
   resultsRestyleTargets,
   recordedAtByMatch,
 } from "./db.ts";
-import { matchCsrChanges, type CsrChange } from "./trueskill2.ts";
+import { matchCsrChanges, matchWinChances, type CsrChange } from "./trueskill2.ts";
 import { renderCarnageCsrPng } from "./renderCarnage.ts";
 import { formatMatchCaption } from "./discord.ts";
 import { RESULTS_FMT_VERSION } from "./version.ts";
@@ -273,9 +273,10 @@ export async function healStaleResults(
     if (!match) continue; // match deleted between query and now
     const changes: Map<string, CsrChange> | undefined =
       matchCsrChanges(chrono, matchId) ?? undefined;
+    const win = matchWinChances(chrono, matchId) ?? undefined;
     try {
       const report = toReport(match);
-      const png = await renderCarnageCsrPng(report, changes);
+      const png = await renderCarnageCsrPng(report, changes, win);
       const ok = await editResultMessage(webhookUrl, msgId, formatMatchCaption(report), png);
       if (ok) {
         await setMatchResultsFmt(db, matchId, RESULTS_FMT_VERSION);
@@ -311,8 +312,9 @@ export async function restyleResultPost(
   const match = chrono.find((m) => m.matchId === matchId);
   if (!match) return "skipped";
   const changes: Map<string, CsrChange> | undefined = matchCsrChanges(chrono, matchId) ?? undefined;
+  const win = matchWinChances(chrono, matchId) ?? undefined;
   const report = toReport(match);
-  const png = await renderCarnageCsrPng(report, changes);
+  const png = await renderCarnageCsrPng(report, changes, win);
   const ok = await editResultMessage(webhookUrl, msgId, formatMatchCaption(report), png);
   if (ok) {
     await setMatchResultsFmt(db, matchId, RESULTS_FMT_VERSION);
