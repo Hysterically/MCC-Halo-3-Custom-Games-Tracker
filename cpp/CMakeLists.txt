@@ -37,6 +37,7 @@ set(H3_SOURCES
   src/heal.cpp
   src/update_check.cpp
   src/watcher.cpp
+  src/status_bar.cpp
   src/setup.cpp
   src/cli.cpp
 )

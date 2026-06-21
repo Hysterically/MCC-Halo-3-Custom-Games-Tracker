@@ -34,12 +34,25 @@ import { postCsrMatchResult, upsertCsrLeaderboard, startBot } from "./discord.ts
 import { healStaleResults } from "./heal.ts";
 import { checkForUpdate } from "./updateCheck.ts";
 import { RESULTS_FMT_VERSION } from "./version.ts";
+import { statusBar, banner, c } from "./term.ts";
 
 const isCarnage = (f: string): boolean =>
   /carnage/i.test(f) && extname(f).toLowerCase() === ".xml";
 
 const db = await openDb(config.dbUrl, config.dbAuthToken);
-console.log(`[db] ${config.dbUrl} — ${await matchCount(db)} matches before this run`);
+const startCount = await matchCount(db);
+
+// Live dashboard: a boxed config summary up top, then a self-updating footer.
+statusBar.start();
+banner("Halo 3 Customs Tracker", [
+  ["Database", config.dbUrl],
+  ["Watching", config.carnageDir],
+  ["Results", config.discordResultsWebhookUrl ? c.green("on") : c.dim("off")],
+  ["Leaderboard", config.discordLeaderboardWebhookUrl ? c.green("on") : c.dim("off")],
+  ["Bot", config.discordBotToken ? c.green("on") : c.dim("off")],
+  ["Matches", `${startCount} recorded`],
+]);
+statusBar.setState({ totalMatches: startCount });
 
 /** Parse one file and record it if it's a tracked match. Returns it on success. */
 async function ingest(path: string): Promise<CarnageReport | null> {
@@ -78,8 +91,8 @@ const label = (r: CarnageReport): string =>
 
 // --- startup -------------------------------------------------------------
 // No auto-backfill: historic reports already in the folder are ignored.
-// Run `npm run backfill` for intentional historic ingest.
-console.log(`[watch] tracking new matches in ${config.carnageDir}`);
+// Run `npm run backfill` for intentional historic ingest. The banner above
+// already reports which channels/bot are active, so no per-channel preamble.
 
 // --- optional bot ----------------------------------------------------------
 if (config.discordBotToken) {
@@ -90,15 +103,6 @@ if (config.discordBotToken) {
     config.discordResultsWebhookUrl,
     config.discordLeaderboardWebhookUrl,
   ).catch((e) => console.error("[discord] bot failed to start:", e));
-} else {
-  console.log("[discord] no DISCORD_BOT_TOKEN — slash commands disabled");
-}
-
-if (!config.discordResultsWebhookUrl) {
-  console.log("[discord] no DISCORD_RESULTS_WEBHOOK_URL — per-match posts disabled");
-}
-if (!config.discordLeaderboardWebhookUrl) {
-  console.log("[discord] no DISCORD_LEADERBOARD_WEBHOOK_URL — live leaderboard disabled");
 }
 
 // Tell the user if their build is behind the latest release (best-effort).
@@ -140,6 +144,11 @@ async function onFile(path: string): Promise<void> {
   const report = await ingest(path);
   if (!report) return;
   console.log(`[match] ${label(report)}`);
+  statusBar.recordMatch(
+    `${report.gameTypeName}${report.mapName ? ` on ${report.mapName}` : ""} — ${
+      report.winners[0] ?? "—"
+    }`,
+  );
 
   // Per-player CSR changes for the result post — replayed from the recorded
   // history, so they match exactly what the leaderboard will apply.
@@ -180,10 +189,14 @@ async function onFile(path: string): Promise<void> {
 watcher
   .on("add", onFile)
   .on("change", onFile)
-  .on("ready", () => console.log(`[watch] live on ${config.carnageDir} — waiting for matches…`))
+  .on("ready", () => {
+    statusBar.setState({ watching: true });
+    console.log(c.dim("[watch] live — waiting for matches…"));
+  })
   .on("error", (e) => console.error("[watch] error:", e));
 
 const shutdown = (): void => {
+  statusBar.stop();
   console.log("\n[exit] closing…");
   watcher.close().finally(() => {
     db.close();

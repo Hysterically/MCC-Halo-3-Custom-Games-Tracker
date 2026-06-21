@@ -29,6 +29,7 @@
 #include "render_carnage.h"
 #include "render_csr_leaderboard.h"
 #include "render_leaderboard.h"
+#include "status_bar.h"
 #include "trueskill2.h"
 #include "update_check.h"
 #include "util.h"
@@ -723,22 +724,28 @@ int cmdExclude(const std::vector<std::string>& args) {
 
 int cmdWatch() {
     auto db = openDb(config().dbUrl, config().dbAuthToken);
-    std::cout << "[db] " << config().dbUrl << " \xE2\x80\x94 " << db->matchCount()
-              << " matches before this run\n";
-    std::cout << "[watch] tracking new matches in " << config().carnageDir << "\n";
+    long long before = db->matchCount();
+
+    // Live dashboard: a boxed config summary up top, then a self-updating footer.
+    // The banner reports which channels/bot are active, so no per-channel preamble.
+    term::init();
+    term::statusBar().start();
+    term::banner(
+        "Halo 3 Customs Tracker",
+        {{"Database", config().dbUrl},
+         {"Watching", config().carnageDir},
+         {"Results", config().discordResultsWebhookUrl ? term::green("on") : term::dim("off")},
+         {"Leaderboard",
+          config().discordLeaderboardWebhookUrl ? term::green("on") : term::dim("off")},
+         {"Bot", config().discordBotToken ? term::green("on") : term::dim("off")},
+         {"Matches", std::to_string(before) + " recorded"}});
+    term::statusBar().setTotal(before);
 
     startBotIfConfigured(*db);
 
     // Tell the user if their build is behind the latest release (best-effort,
     // off the main thread so a slow GitHub doesn't delay startup).
     std::thread updateThread(checkForUpdate);
-
-    if (!config().discordResultsWebhookUrl)
-        std::cout << "[discord] no DISCORD_RESULTS_WEBHOOK_URL \xE2\x80\x94 per-match posts "
-                     "disabled\n";
-    if (!config().discordLeaderboardWebhookUrl)
-        std::cout << "[discord] no DISCORD_LEADERBOARD_WEBHOOK_URL \xE2\x80\x94 live leaderboard "
-                     "disabled\n";
 
     // Refresh once on startup so the board survives DB edits / a deleted message.
     if (config().discordLeaderboardWebhookUrl) {
@@ -770,7 +777,7 @@ int cmdWatch() {
         try {
             report = parseCarnageFile(path);
         } catch (const std::exception& e) {
-            std::cerr << "[skip] " << path << ": " << e.what() << "\n";
+            term::statusBar().logErr("[skip] " + path + ": " + e.what());
             return std::nullopt;
         }
         if (!report.tracked) return std::nullopt;
@@ -786,7 +793,7 @@ int cmdWatch() {
         try {
             if (!db->recordMatch(report)) return std::nullopt;  // dupe — already recorded
         } catch (const std::exception& e) {
-            std::cerr << "[db] record failed for " << path << ": " << e.what() << "\n";
+            term::statusBar().logErr("[db] record failed for " + path + ": " + e.what());
             return std::nullopt;
         }
         return report;
@@ -800,7 +807,12 @@ int cmdWatch() {
 
         auto report = ingest(path);
         if (!report) return;
-        std::cout << "[match] " << matchLabel(*report) << "\n";
+        term::statusBar().log("[match] " + matchLabel(*report));
+        {
+            std::string winner = report->winners.empty() ? "\xE2\x80\x94" : report->winners[0];
+            std::string on = report->mapName.empty() ? "" : " on " + report->mapName;
+            term::statusBar().recordMatch(report->gameTypeName + on + " \xE2\x80\x94 " + winner);
+        }
 
         // Per-player CSR rating + change for the result post — replayed from
         // the recorded history, so it matches exactly what the leaderboard
@@ -812,7 +824,8 @@ int cmdWatch() {
             csrChanges = matchCsrChanges(chrono, report->matchId);
             winChances = matchWinChances(chrono, report->matchId);
         } catch (const std::exception& e) {
-            std::cerr << "[ts2] CSR change computation failed: " << e.what() << "\n";
+            term::statusBar().logErr(std::string("[ts2] CSR change computation failed: ") +
+                                     e.what());
         }
 
         try {
@@ -826,19 +839,22 @@ int cmdWatch() {
                 db->setMatchResultsFmt(report->matchId, RESULTS_FMT_VERSION);
             }
         } catch (const std::exception& e) {
-            std::cerr << "[discord] result post failed: " << e.what() << "\n";
+            term::statusBar().logErr(std::string("[discord] result post failed: ") + e.what());
         }
         try {
             upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, *db);
         } catch (const std::exception& e) {
-            std::cerr << "[discord] leaderboard upsert failed: " << e.what() << "\n";
+            term::statusBar().logErr(std::string("[discord] leaderboard upsert failed: ") +
+                                     e.what());
         }
     };
 
     SetConsoleCtrlHandler(watchCtrlHandler, TRUE);
-    std::cout << "[watch] live on " << config().carnageDir << " \xE2\x80\x94 waiting for matches\xE2\x80\xA6\n";
+    term::statusBar().setWatching(true);
+    term::statusBar().log(term::dim("[watch] live \xE2\x80\x94 waiting for matches\xE2\x80\xA6"));
     std::cout.flush();
     watchDirectory(config().carnageDir, g_watchStop, onFile);
+    term::statusBar().stop();
     std::cout << "\n[exit] closing\xE2\x80\xA6\n";
     // Let the background tasks finish before the DB (which they hold by ref) dies.
     if (updateThread.joinable()) updateThread.join();
