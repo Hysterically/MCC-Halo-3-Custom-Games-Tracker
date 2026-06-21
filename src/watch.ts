@@ -34,7 +34,7 @@ import { postCsrMatchResultWithControls, upsertCsrLeaderboard, startBot } from "
 import { healStaleResults } from "./heal.ts";
 import { checkForUpdate } from "./updateCheck.ts";
 import { RESULTS_FMT_VERSION } from "./version.ts";
-import { statusBar, banner, c } from "./term.ts";
+import { statusBar, banner, hint, c } from "./term.ts";
 import { categorize, CATEGORY_LABEL } from "./category.ts";
 import { displayName } from "./aliases.ts";
 import { csrText } from "./csr.ts";
@@ -55,6 +55,17 @@ banner("Halo 3 Customs Tracker", [
   ["Bot", config.discordBotToken ? c.green("on") : c.dim("off")],
   ["Matches", `${startCount} recorded`],
 ]);
+
+// Short, config-aware "how to use it" note for friends who just ran the exe.
+const usage = ["Leave this window open while you play customs — results post to Discord automatically. Press Ctrl+C to quit."];
+if (config.discordBotToken) {
+  usage.push("In Discord: /leaderboard · /stats <player>   (admins: Void/Exclude buttons on each result post)");
+}
+if (!config.discordResultsWebhookUrl && !config.discordLeaderboardWebhookUrl && !config.discordBotToken) {
+  usage.push("Discord isn't set up yet — ask your host for the group .env, or run setup.");
+}
+hint(usage);
+
 statusBar.setState({ totalMatches: startCount });
 
 /** Parse one file and record it if it's a tracked match. Returns it on success. */

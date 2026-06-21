@@ -771,6 +771,21 @@ int cmdWatch() {
           config().discordLeaderboardWebhookUrl ? term::green("on") : term::dim("off")},
          {"Bot", config().discordBotToken ? term::green("on") : term::dim("off")},
          {"Matches", std::to_string(before) + " recorded"}});
+
+    // Short, config-aware "how to use it" note for friends who just ran the exe.
+    std::vector<std::string> usage = {
+        "Leave this window open while you play customs \xE2\x80\x94 results post to Discord "
+        "automatically. Press Ctrl+C to quit."};
+    if (config().discordBotToken)
+        usage.push_back(
+            "In Discord: /leaderboard \xC2\xB7 /stats <player>   (admins: Void/Exclude buttons on "
+            "each result post)");
+    if (!config().discordResultsWebhookUrl && !config().discordLeaderboardWebhookUrl &&
+        !config().discordBotToken)
+        usage.push_back(
+            "Discord isn't set up yet \xE2\x80\x94 ask your host for the group .env, or run setup.");
+    term::hint(usage);
+
     term::statusBar().setTotal(before);
 
     if (config().discordBotToken) term::statusBar().setBot(term::Bot::Connecting);

@@ -209,6 +209,10 @@ void banner(const std::string& title,
     std::cout << out.str();
 }
 
+void hint(const std::vector<std::string>& lines) {
+    for (const auto& l : lines) std::cout << dim(" " + l) << "\n";
+}
+
 // Colorize the tag and, on tagged lines only, prefix a dim timestamp.
 std::string decorate(const std::string& line, const char* force = nullptr) {
     std::string out = colorizeTag(line, force);

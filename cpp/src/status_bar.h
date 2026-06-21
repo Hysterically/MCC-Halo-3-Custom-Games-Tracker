@@ -29,6 +29,9 @@ std::string gray(const std::string&);
 void banner(const std::string& title,
             const std::vector<std::pair<std::string, std::string>>& rows);
 
+// Short dim usage hint printed below the banner (one indented line each).
+void hint(const std::vector<std::string>& lines);
+
 // The bot's gateway state, for the footer's `bot ●` indicator.
 enum class Bot { Off, Connecting, Online };
 
