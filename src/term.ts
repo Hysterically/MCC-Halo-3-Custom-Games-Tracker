@@ -256,3 +256,8 @@ export function banner(title: string, rows: [string, string][]): void {
   const body = rows.map(([l, v]) => ` ${c.gray(l.padEnd(labelW))}  ${v}`);
   console.log([rule, ` ${c.bold(c.cyan(title))}`, rule, ...body, rule].join("\n"));
 }
+
+/** Print a short dim usage hint below the banner (one indented line each). */
+export function hint(lines: string[]): void {
+  for (const l of lines) console.log(c.dim(` ${l}`));
+}
