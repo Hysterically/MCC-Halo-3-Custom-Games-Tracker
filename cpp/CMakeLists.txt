@@ -38,6 +38,7 @@ set(H3_SOURCES
   src/update_check.cpp
   src/watcher.cpp
   src/status_bar.cpp
+  src/gui.cpp
   src/setup.cpp
   src/cli.cpp
 )
