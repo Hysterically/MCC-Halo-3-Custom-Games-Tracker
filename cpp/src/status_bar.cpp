@@ -6,6 +6,9 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
 #include <iostream>
 #include <mutex>
 #include <regex>
@@ -42,6 +45,25 @@ std::string ago(long long ms) {
     return std::to_string(s / 86400) + "d ago";
 }
 
+// Compact uptime: "45s" / "12m" / "1h3m".
+std::string uptimeStr(long long startMs) {
+    long long s = std::max(0LL, (nowMs() - startMs) / 1000);
+    if (s < 60) return std::to_string(s) + "s";
+    long long m = s / 60;
+    if (m < 60) return std::to_string(m) + "m";
+    return std::to_string(m / 60) + "h" + std::to_string(m % 60) + "m";
+}
+
+// Local HH:MM:SS for log-line timestamps.
+std::string hhmmss() {
+    std::time_t t = std::time(nullptr);
+    std::tm lt{};
+    localtime_s(&lt, &t);
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d", lt.tm_hour, lt.tm_min, lt.tm_sec);
+    return buf;
+}
+
 // Color a leading "[tag]" token. `force` (e.g. "31" for errors) overrides the
 // per-tag map. Mirrors src/term.ts colorizeTag.
 std::string colorizeTag(const std::string& line, const char* force = nullptr) {
@@ -75,12 +97,30 @@ struct BarState {
     std::string lastMatch;
     long long lastMatchAtMs = 0;
     bool watching = false;
+    long long startedAtMs = 0;
+    int bot = 0;       // 0 off, 1 connecting, 2 online
+    int lastPost = 0;  // 0 none, 1 ok, 2 fail
+    long long cat2v2 = 0, catFFA = 0, cat4v4 = 0;  // per-category this session
     int frame = 0;
     bool footerVisible = false;
+    std::string lastTitle;
     std::atomic<bool> running{false};
     std::thread ticker;
 };
 BarState g;
+
+// Keep the console window title in sync (only calls the API on change).
+void updateTitleLocked() {
+    if (g_plain) return;
+    std::string title = "H3 Tracker \xE2\x80\x94 " + std::to_string(g.totalMatches) +
+                        " matches \xC2\xB7 " + (g.watching ? "watching" : "idle");
+    if (title == g.lastTitle) return;
+    g.lastTitle = title;
+    int n = MultiByteToWideChar(CP_UTF8, 0, title.data(), (int)title.size(), nullptr, 0);
+    std::wstring w(n, 0);
+    MultiByteToWideChar(CP_UTF8, 0, title.data(), (int)title.size(), w.data(), n);
+    SetConsoleTitleW(w.c_str());
+}
 
 void clearFooterLocked() {
     if (g.footerVisible) {
@@ -94,8 +134,29 @@ void drawFooterLocked() {
     const std::string sep = gray(" \xC2\xB7 ");  // " · "
     std::ostringstream p;
     p << cyan(SPINNER[g.frame % SPINNER_N]) << " " << bold("watching");
-    p << sep << green(std::to_string(g.matchesThisSession)) << " this run";
+    p << sep << "up " << uptimeStr(g.startedAtMs);
+
+    // matches this run + per-category tally (only nonzero categories shown).
+    std::string tally;
+    auto addCat = [&](const char* name, long long n) {
+        if (n <= 0) return;
+        if (!tally.empty()) tally += "\xC2\xB7";  // "·"
+        tally += std::string(name) + " " + std::to_string(n);
+    };
+    addCat("2v2", g.cat2v2);
+    addCat("FFA", g.catFFA);
+    addCat("4v4", g.cat4v4);
+    p << sep << green(std::to_string(g.matchesThisSession)) << " run"
+      << (tally.empty() ? "" : " (" + tally + ")");
     p << sep << g.totalMatches << " total";
+
+    if (g.bot != 0) {
+        std::string dot = g.bot == 2 ? green("\xE2\x97\x8F") : gray("\xE2\x97\x8B");  // ● / ○
+        p << sep << "bot " << dot << (g.bot == 2 ? "online" : "connecting");
+    }
+    if (g.lastPost != 0)
+        p << sep << "post " << (g.lastPost == 1 ? green("\xE2\x9C\x93")   // ✓
+                                                : yellow("\xE2\x9A\xA0"));  // ⚠
     if (!g.lastMatch.empty()) {
         p << sep << "last: " << g.lastMatch;
         if (g.lastMatchAtMs) p << " " << gray("(" + ago(g.lastMatchAtMs) + ")");
@@ -148,8 +209,18 @@ void banner(const std::string& title,
     std::cout << out.str();
 }
 
+// Colorize the tag and, on tagged lines only, prefix a dim timestamp.
+std::string decorate(const std::string& line, const char* force = nullptr) {
+    std::string out = colorizeTag(line, force);
+    if (g_plain) return out;
+    static const std::regex tagged(R"(^\s*\[\w+\])");
+    if (std::regex_search(line, tagged)) return dim(hhmmss()) + " " + out;
+    return out;
+}
+
 void StatusBar::start() {
     if (g_plain || g.running.load()) return;
+    g.startedAtMs = nowMs();
     g.running.store(true);
     g.ticker = std::thread([] {
         while (g.running.load()) {
@@ -170,35 +241,57 @@ void StatusBar::stop() {
 void StatusBar::setWatching(bool on) {
     std::lock_guard<std::mutex> lk(g.mu);
     g.watching = on;
+    updateTitleLocked();
     drawFooterLocked();
 }
 
 void StatusBar::setTotal(long long n) {
     std::lock_guard<std::mutex> lk(g.mu);
     g.totalMatches = n;
+    updateTitleLocked();
     drawFooterLocked();
 }
 
-void StatusBar::recordMatch(const std::string& label) {
+void StatusBar::setBot(Bot state) {
+    std::lock_guard<std::mutex> lk(g.mu);
+    g.bot = static_cast<int>(state);
+    drawFooterLocked();
+}
+
+void StatusBar::setLastPost(bool ok) {
+    std::lock_guard<std::mutex> lk(g.mu);
+    g.lastPost = ok ? 1 : 2;
+    drawFooterLocked();
+}
+
+void StatusBar::recordMatch(const std::string& label, const std::string& category) {
     std::lock_guard<std::mutex> lk(g.mu);
     g.matchesThisSession++;
     g.totalMatches++;
+    if (category == "2v2")
+        g.cat2v2++;
+    else if (category == "FFA")
+        g.catFFA++;
+    else if (category == "4v4")
+        g.cat4v4++;
     g.lastMatch = label;
     g.lastMatchAtMs = nowMs();
+    if (!g_plain && std::getenv("H3_BELL")) std::cout << "\a";  // opt-in bell
+    updateTitleLocked();
     drawFooterLocked();
 }
 
 void StatusBar::log(const std::string& line) {
     std::lock_guard<std::mutex> lk(g.mu);
     clearFooterLocked();
-    std::cout << colorizeTag(line) << "\n";
+    std::cout << decorate(line) << "\n";
     drawFooterLocked();
 }
 
 void StatusBar::logErr(const std::string& line) {
     std::lock_guard<std::mutex> lk(g.mu);
     clearFooterLocked();
-    std::cout << colorizeTag(line, "31") << "\n";
+    std::cout << decorate(line, "31") << "\n";
     drawFooterLocked();
 }
 

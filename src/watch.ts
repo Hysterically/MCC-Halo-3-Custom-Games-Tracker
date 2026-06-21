@@ -35,6 +35,9 @@ import { healStaleResults } from "./heal.ts";
 import { checkForUpdate } from "./updateCheck.ts";
 import { RESULTS_FMT_VERSION } from "./version.ts";
 import { statusBar, banner, c } from "./term.ts";
+import { categorize, CATEGORY_LABEL } from "./category.ts";
+import { displayName } from "./aliases.ts";
+import { csrText } from "./csr.ts";
 
 const isCarnage = (f: string): boolean =>
   /carnage/i.test(f) && extname(f).toLowerCase() === ".xml";
@@ -84,10 +87,34 @@ async function ingest(path: string): Promise<CarnageReport | null> {
   return report;
 }
 
-const label = (r: CarnageReport): string =>
-  `${r.gameTypeName}${r.mapName ? ` on ${r.mapName}` : ""} · ${r.players.length}p · winner: ${
-    r.winners.join(", ") || "—"
-  }`;
+/** Short footer label for the status bar: gametype on map — winner. */
+const footerLabel = (r: CarnageReport): string =>
+  `${r.gameTypeName}${r.mapName ? ` on ${r.mapName}` : ""} — ${r.winners[0] ?? "—"}`;
+
+/**
+ * The console match block: a colored header line + winner + per-player CSR
+ * changes (gains green, losses red, biggest first — same data the Discord post
+ * shows). Colors are no-ops off a TTY, so a redirected log stays plain text.
+ */
+function matchBlock(r: CarnageReport, changes: Map<string, CsrChange> | null): string {
+  const cat = CATEGORY_LABEL[categorize(r)];
+  const head = `[match] ${r.gameTypeName}${r.mapName ? ` on ${r.mapName}` : ""} · ${cat} · ${
+    r.players.length
+  } players`;
+  const winners = r.winners.map(displayName).join(", ") || "—";
+  const lines = [head, `        winner: ${winners}`];
+  if (changes?.size) {
+    const rated = r.players.filter((p) => changes.has(p.xuid));
+    rated.sort((a, b) => changes.get(b.xuid)!.delta - changes.get(a.xuid)!.delta);
+    const parts = rated.map((p) => {
+      const ch = changes.get(p.xuid)!;
+      const delta = ch.delta >= 0 ? c.green(`+${ch.delta}`) : c.red(`${ch.delta}`);
+      return `${displayName(p.gamertag)} ${delta} (${csrText(ch.csr)})`;
+    });
+    lines.push(`        CSR: ${parts.join(" · ")}`);
+  }
+  return lines.join("\n");
+}
 
 // --- startup -------------------------------------------------------------
 // No auto-backfill: historic reports already in the folder are ignored.
@@ -96,6 +123,7 @@ const label = (r: CarnageReport): string =>
 
 // --- optional bot ----------------------------------------------------------
 if (config.discordBotToken) {
+  statusBar.setBot("connecting");
   startBot(
     config.discordBotToken,
     config.discordGuildId,
@@ -143,12 +171,6 @@ async function onFile(path: string): Promise<void> {
 
   const report = await ingest(path);
   if (!report) return;
-  console.log(`[match] ${label(report)}`);
-  statusBar.recordMatch(
-    `${report.gameTypeName}${report.mapName ? ` on ${report.mapName}` : ""} — ${
-      report.winners[0] ?? "—"
-    }`,
-  );
 
   // Per-player CSR changes for the result post — replayed from the recorded
   // history, so they match exactly what the leaderboard will apply.
@@ -162,6 +184,9 @@ async function onFile(path: string): Promise<void> {
   } catch (e) {
     console.error("[ts2] CSR change computation failed:", (e as Error).message);
   }
+
+  console.log(matchBlock(report, csrChanges));
+  statusBar.recordMatch(footerLabel(report), CATEGORY_LABEL[categorize(report)]);
 
   try {
     // Capture the #game-results message id so the game can later be voided via
@@ -177,13 +202,16 @@ async function onFile(path: string): Promise<void> {
       await setMatchResultsMsg(db, report.matchId, msgId);
       // Stamp the layout version so the startup heal never re-styles a fresh post.
       await setMatchResultsFmt(db, report.matchId, RESULTS_FMT_VERSION);
+      statusBar.setLastPost(true);
     }
   } catch (e) {
+    statusBar.setLastPost(false);
     console.error("[discord] result post failed:", (e as Error).message);
   }
   try {
     await upsertCsrLeaderboard(config.discordLeaderboardWebhookUrl, db);
   } catch (e) {
+    statusBar.setLastPost(false);
     console.error("[discord] leaderboard upsert failed:", (e as Error).message);
   }
 }

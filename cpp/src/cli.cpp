@@ -15,9 +15,11 @@
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
+#include "aliases.h"
 #include "carnage.h"
 #include "category.h"
 #include "config.h"
+#include "csr.h"
 #include "db.h"
 #include "discord_gateway.h"
 #include "discord_webhook.h"
@@ -629,6 +631,36 @@ std::string matchLabel(const CarnageReport& r) {
     return r.gameTypeName + on + " \xC2\xB7 " + std::to_string(r.players.size()) +
            "p \xC2\xB7 winner: " + w;
 }
+
+// The console match block: a colored header + winner + per-player CSR changes
+// (gains green, losses red, biggest first). Mirrors matchBlock in src/watch.ts.
+std::string matchBlock(const CarnageReport& r, const std::map<std::string, CsrChange>& changes) {
+    std::string on = r.mapName.empty() ? "" : " on " + r.mapName;
+    std::string head = "[match] " + r.gameTypeName + on + " \xC2\xB7 " +
+                       categoryLabel(categorize(r)) + " \xC2\xB7 " +
+                       std::to_string(r.players.size()) + " players";
+    std::vector<std::string> winners;
+    for (const auto& w : r.winners) winners.push_back(displayName(w));
+    std::string out = head + "\n        winner: " +
+                      (winners.empty() ? std::string("\xE2\x80\x94") : util::join(winners, ", "));
+    if (!changes.empty()) {
+        std::vector<std::pair<std::string, CsrChange>> entries;
+        for (const auto& p : r.players) {
+            auto it = changes.find(p.xuid);
+            if (it != changes.end()) entries.emplace_back(displayName(p.gamertag), it->second);
+        }
+        std::stable_sort(entries.begin(), entries.end(),
+                         [](const auto& a, const auto& b) { return a.second.delta > b.second.delta; });
+        std::vector<std::string> parts;
+        for (const auto& [name, c] : entries) {
+            std::string d = c.delta >= 0 ? term::green("+" + std::to_string(c.delta))
+                                         : term::red(std::to_string(c.delta));
+            parts.push_back(name + " " + d + " (" + csrText(c.csr) + ")");
+        }
+        if (!parts.empty()) out += "\n        CSR: " + util::join(parts, " \xC2\xB7 ");
+    }
+    return out;
+}
 }  // namespace
 
 int cmdRestyle(const std::vector<std::string>& args) {
@@ -741,6 +773,7 @@ int cmdWatch() {
          {"Matches", std::to_string(before) + " recorded"}});
     term::statusBar().setTotal(before);
 
+    if (config().discordBotToken) term::statusBar().setBot(term::Bot::Connecting);
     startBotIfConfigured(*db);
 
     // Tell the user if their build is behind the latest release (best-effort,
@@ -807,12 +840,6 @@ int cmdWatch() {
 
         auto report = ingest(path);
         if (!report) return;
-        term::statusBar().log("[match] " + matchLabel(*report));
-        {
-            std::string winner = report->winners.empty() ? "\xE2\x80\x94" : report->winners[0];
-            std::string on = report->mapName.empty() ? "" : " on " + report->mapName;
-            term::statusBar().recordMatch(report->gameTypeName + on + " \xE2\x80\x94 " + winner);
-        }
 
         // Per-player CSR rating + change for the result post — replayed from
         // the recorded history, so it matches exactly what the leaderboard
@@ -828,6 +855,14 @@ int cmdWatch() {
                                      e.what());
         }
 
+        term::statusBar().log(matchBlock(*report, csrChanges));
+        {
+            std::string winner = report->winners.empty() ? "\xE2\x80\x94" : report->winners[0];
+            std::string on = report->mapName.empty() ? "" : " on " + report->mapName;
+            term::statusBar().recordMatch(report->gameTypeName + on + " \xE2\x80\x94 " + winner,
+                                          categoryLabel(categorize(*report)));
+        }
+
         try {
             // Capture the #game-results message id so the game can later be voided via /delete
             // or the Void button. Posts with buttons when the bot's app-owned webhook is
@@ -839,13 +874,16 @@ int cmdWatch() {
                 db->setMatchResultsMsg(report->matchId, msgId);
                 // Stamp the layout version so the startup heal never re-styles a fresh post.
                 db->setMatchResultsFmt(report->matchId, RESULTS_FMT_VERSION);
+                term::statusBar().setLastPost(true);
             }
         } catch (const std::exception& e) {
+            term::statusBar().setLastPost(false);
             term::statusBar().logErr(std::string("[discord] result post failed: ") + e.what());
         }
         try {
             upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, *db);
         } catch (const std::exception& e) {
+            term::statusBar().setLastPost(false);
             term::statusBar().logErr(std::string("[discord] leaderboard upsert failed: ") +
                                      e.what());
         }

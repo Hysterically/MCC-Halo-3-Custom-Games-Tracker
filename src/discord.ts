@@ -27,6 +27,7 @@ import {
   type ChatInputCommandInteraction,
 } from "discord.js";
 import { config } from "./config.ts";
+import { statusBar } from "./term.ts";
 import type { DB, StoredMatch } from "./db.ts";
 import {
   matchCount,
@@ -1119,6 +1120,7 @@ export async function startBot(
       await rest.put(Routes.applicationCommands(c.user.id), { body: COMMANDS });
     }
     console.log(`[discord] bot online as ${c.user.tag}; commands registered`);
+    statusBar.setBot("online");
     // Provision our own webhook in the results channel so per-match posts can
     // carry the Void/Exclude buttons (plain webhooks strip components).
     if (resultsWebhookUrl) {
