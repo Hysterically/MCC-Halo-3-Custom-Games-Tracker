@@ -19,6 +19,7 @@
 
 #include "cli.h"
 #include "config.h"
+#include "gui.h"
 #include "util.h"
 
 int main(int argc, char** argv) {
@@ -55,6 +56,7 @@ int main(int argc, char** argv) {
             return cmdWatch();
         }
         if (cmd == "setup") return cmdSetup(hasFlag("--force"));
+        if (cmd == "gui") return cmdGui();
         if (cmd == "backfill") return cmdBackfill(rest);
         if (cmd == "board") return cmdBoard();
         if (cmd == "announce") return cmdAnnounce();
@@ -72,7 +74,7 @@ int main(int argc, char** argv) {
         if (cmd == "gw-probe") return cmdGwProbe();
 
         std::cerr << "Unknown command: " << cmd << "\n"
-                  << "Commands: watch setup backfill board announce clear parse inspect\n";
+                  << "Commands: watch gui setup backfill board announce clear parse inspect\n";
         return 2;
     } catch (const std::exception& e) {
         std::cerr << "[error] " << e.what() << "\n";
