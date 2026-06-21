@@ -4,14 +4,26 @@
 // src/discord.ts.
 #pragma once
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "carnage.h"
 #include "category.h"
 #include "db.h"
 #include "elo.h"
 #include "trueskill2.h"
+
+// Embed accent colors, shared with the TS build (src/discord.ts EMBED). Used by
+// the gateway bot (/stats, /leaderboard) and the weekly recap.
+namespace Embed {
+constexpr int NEUTRAL = 0x5865f2;  // blurple — leaderboards, stats, recap
+constexpr int WIN = 0x57f287;      // green — restored / counted
+constexpr int DANGER = 0xed4245;   // red — voided / off-format
+constexpr int GOLD = 0xfee75c;     // recap highlights
+}  // namespace Embed
 
 // The combined ELO leaderboard (legacy — ELO is retired from the live tracker;
 // kept for the dormant analysis path).
@@ -43,3 +55,26 @@ std::string formatCsrLine(const CarnageReport& r,
 
 // Short caption posted above the rendered carnage image.
 std::string formatMatchCaption(const CarnageReport& r);
+
+// --- rich embeds (gateway bot) ----------------------------------------------
+
+// Per-player CSR stats as a rich embed for the /stats reply. Returns an object
+// with EITHER "embed" (the stats card) for a resolved + ranked player, or
+// "content" (a plain line) for the not-found / unranked cases. Mirrors
+// buildCsrPlayerStatsEmbed in src/discord.ts.
+nlohmann::json csrPlayerStatsEmbed(const std::vector<StoredMatch>& matches,
+                                   const std::string& query);
+
+// Embed wrapper around the /leaderboard standings PNG (attachment://…). Mirrors
+// leaderboardEmbed in src/discord.ts.
+nlohmann::json leaderboardEmbed();
+
+// The weekly recap embed: games played, most active player, MVP (best K/D, ≥2
+// games) over the last 7 days, and the current per-category CSR leaders. Returns
+// std::nullopt if no counted matches fell in the window. Mirrors buildRecapEmbed
+// in src/discord.ts.
+std::optional<nlohmann::json> recapEmbed(const std::vector<StoredMatch>& matches);
+
+// A ≤100-char plain-text label for one match, for the /delete autocomplete list.
+// Mirrors matchChoiceLabel in src/discord.ts.
+std::string matchChoiceLabel(const StoredMatch& m);
