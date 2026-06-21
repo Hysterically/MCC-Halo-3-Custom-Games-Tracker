@@ -1,7 +1,10 @@
 #include "format.h"
 
 #include <algorithm>
+#include <chrono>
+#include <ctime>
 #include <map>
+#include <unordered_map>
 
 #include "aliases.h"
 #include "category.h"
@@ -322,4 +325,295 @@ std::string formatMatchResult(const CarnageReport& r,
     out.insert(out.end(), blocks.begin(), blocks.end());
     out.push_back("```");
     return rstrip(join(out, "\n")) + formatEloLine(r, eloChanges);
+}
+
+// --- rich embeds (gateway bot) ----------------------------------------------
+namespace {
+
+using nlohmann::json;
+
+const char* MAGNIFIER = "\xF0\x9F\x94\x8D";   // 🔍
+const char* CHART = "\xF0\x9F\x93\x8A";       // 📊
+const char* CALENDAR = "\xF0\x9F\x93\x85";    // 📅
+const char* MIDDOT = "\xC2\xB7";              // ·
+
+// Wall-clock now, epoch ms — the recap window + embed timestamps.
+long long nowMsWall() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+// ISO-8601 UTC timestamp ("YYYY-MM-DDTHH:MM:SS.sssZ") — matches new Date().toISOString().
+std::string isoTimestamp(long long ms) {
+    std::time_t t = static_cast<std::time_t>(ms / 1000);
+    std::tm tm{};
+    gmtime_s(&tm, &t);
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tm);
+    char out[40];
+    std::snprintf(out, sizeof(out), "%s.%03dZ", buf, static_cast<int>(ms % 1000));
+    return out;
+}
+
+// "YYYY-MM-DD HH:MM" UTC from epoch ms — the autocomplete label minute stamp.
+std::string isoMinuteUtc(long long ms) {
+    std::time_t t = static_cast<std::time_t>(ms / 1000);
+    std::tm tm{};
+    gmtime_s(&tm, &t);
+    char buf[20];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &tm);
+    return buf;
+}
+
+// Resolve a free-text query (Gamertag or display alias, partial) to a single
+// player: xuid + display label, or nullopt. Mirrors resolvePlayer in
+// src/discord.ts (exact > prefix > substring, against both keys).
+std::optional<std::pair<std::string, std::string>> resolvePlayer(
+    const std::vector<StoredMatch>& matches, const std::string& query) {
+    std::string q = util::toLower(util::trim(query));
+    if (q.empty()) return std::nullopt;
+
+    // xuid -> most-recent Gamertag (chronological, last wins).
+    std::unordered_map<std::string, std::string> names;
+    std::vector<std::string> order;  // first-seen xuid order, for a stable scan
+    for (const auto& m : matches)
+        for (const auto& p : m.players)
+            if (!p.xuid.empty()) {
+                if (!names.count(p.xuid)) order.push_back(p.xuid);
+                names[p.xuid] = p.gamertag;
+            }
+
+    struct Cand {
+        std::string xuid;
+        std::string label;
+        std::string k0;  // gamertag lower
+        std::string k1;  // displayName lower
+    };
+    std::vector<Cand> cands;
+    for (const auto& xuid : order) {
+        const std::string& gt = names[xuid];
+        std::string label = displayName(gt);
+        cands.push_back({xuid, label, util::toLower(gt), util::toLower(label)});
+    }
+
+    auto find = [&](int mode) -> const Cand* {
+        for (const auto& c : cands) {
+            for (const std::string& k : {c.k0, c.k1}) {
+                bool hit = mode == 0 ? (k == q)
+                                     : mode == 1 ? (k.rfind(q, 0) == 0)
+                                                 : (k.find(q) != std::string::npos);
+                if (hit) return &c;
+            }
+        }
+        return nullptr;
+    };
+    const Cand* hit = find(0);
+    if (!hit) hit = find(1);
+    if (!hit) hit = find(2);
+    if (!hit) return std::nullopt;
+    return std::make_pair(hit->xuid, hit->label);
+}
+
+struct CsrStatRow {
+    std::string mode;
+    std::string rank;
+    std::string csr;
+    std::string wld;
+    std::string win;
+    std::string kd;
+};
+struct CsrStatsResult {
+    enum Kind { None, Unranked, Ok } kind = None;
+    std::string label;  // resolved display label (Unranked/Ok)
+    std::vector<CsrStatRow> rows;
+    long long games = 0, wins = 0, losses = 0, draws = 0, kills = 0, deaths = 0;
+};
+
+std::string winPctStr(long long wins, long long games) {
+    return games ? std::to_string(util::jsRound(static_cast<double>(wins) /
+                                                static_cast<double>(games) * 100.0)) +
+                       "%"
+                 : EMDASH;
+}
+
+// Per-player CSR stats, computed once. Mirrors computeCsrPlayerStats in src/discord.ts.
+CsrStatsResult computeCsrPlayerStats(const std::vector<StoredMatch>& matches,
+                                     const std::string& query) {
+    CsrStatsResult res;
+    auto who = resolvePlayer(matches, query);
+    if (!who) {
+        res.kind = CsrStatsResult::None;
+        return res;
+    }
+    res.label = who->second;
+
+    for (Category c : BOARD_CATEGORIES) {
+        std::vector<MMR> ranked = csrRowsFor(matches, c);  // games>0, skill desc
+        int idx = -1;
+        for (size_t i = 0; i < ranked.size(); ++i)
+            if (ranked[i].xuid == who->first) {
+                idx = static_cast<int>(i);
+                break;
+            }
+        if (idx < 0) continue;
+        const MMR& r = ranked[idx];
+        res.games += r.games;
+        res.wins += r.wins;
+        res.losses += r.losses;
+        res.draws += r.draws;
+        res.kills += r.kills;
+        res.deaths += r.deaths;
+        CsrStatRow row;
+        row.mode = categoryLabel(c);
+        row.rank = "#" + std::to_string(idx + 1) + "/" + std::to_string(ranked.size());
+        row.csr = csrText(csrFromSkill(r.skill));
+        row.wld = std::to_string(r.wins) + "-" + std::to_string(r.losses) + "-" +
+                  std::to_string(r.draws);
+        row.win = winPctStr(r.wins, r.games);
+        row.kd = kdStr(r.kills, r.deaths);
+        res.rows.push_back(std::move(row));
+    }
+
+    res.kind = res.rows.empty() ? CsrStatsResult::Unranked : CsrStatsResult::Ok;
+    return res;
+}
+
+}  // namespace
+
+nlohmann::json csrPlayerStatsEmbed(const std::vector<StoredMatch>& matches,
+                                   const std::string& query) {
+    CsrStatsResult res = computeCsrPlayerStats(matches, query);
+    if (res.kind == CsrStatsResult::None)
+        return json{{"content",
+                     std::string(MAGNIFIER) + " No player matching **" + query + "** found."}};
+    if (res.kind == CsrStatsResult::Unranked)
+        return json{{"content",
+                     std::string(CHART) + " **" + res.label +
+                         "** hasn't played any ranked (2v2 / 4v4 / FFA) matches yet."}};
+
+    json fields = json::array();
+    for (const auto& r : res.rows)
+        fields.push_back({{"name", r.mode},
+                          {"value", "**" + r.csr + "**\nRank " + r.rank + " " + MIDDOT + " " +
+                                        r.wld + " (" + r.win + ") " + MIDDOT + " K/D " + r.kd},
+                          {"inline", true}});
+    std::string overallKd = kdStr(res.kills, res.deaths);
+    std::string overallWin = winPctStr(res.wins, res.games);
+    std::string footer = std::to_string(res.games) + " games " + MIDDOT + " " +
+                         std::to_string(res.wins) + "-" + std::to_string(res.losses) + "-" +
+                         std::to_string(res.draws) + " (" + overallWin + ") " + MIDDOT + " K/D " +
+                         overallKd;
+    json embed = {{"title", std::string(CHART) + " " + res.label + " " + EMDASH +
+                                " Halo 3 Customs CSR"},
+                  {"color", Embed::NEUTRAL},
+                  {"fields", fields},
+                  {"footer", {{"text", footer}}},
+                  {"timestamp", isoTimestamp(nowMsWall())}};
+    return json{{"embed", embed}};
+}
+
+nlohmann::json leaderboardEmbed() {
+    return json{{"title", std::string(TROPHY) + " Halo 3 Customs " + EMDASH + " CSR Standings"},
+                {"color", Embed::NEUTRAL},
+                {"image", {{"url", "attachment://leaderboard.png"}}},
+                {"footer", {{"text", std::string("2v2 ") + MIDDOT + " FFA " + MIDDOT +
+                                         " 4v4 " + EMDASH + " TrueSkill 2"}}},
+                {"timestamp", isoTimestamp(nowMsWall())}};
+}
+
+std::optional<nlohmann::json> recapEmbed(const std::vector<StoredMatch>& matches) {
+    constexpr long long WINDOW_MS = 7LL * 86'400'000LL;
+    long long since = nowMsWall() - WINDOW_MS;
+
+    std::vector<const StoredMatch*> week;
+    for (const auto& m : matches)
+        if (m.playedAt >= since && !m.excluded) week.push_back(&m);
+    if (week.empty()) return std::nullopt;
+
+    struct PlayerAgg {
+        std::string name;
+        long long games = 0, kills = 0, deaths = 0;
+    };
+    std::unordered_map<std::string, PlayerAgg> byPlayer;
+    std::vector<std::string> order;  // first-seen xuid order (stable tie-breaks)
+    for (const auto* m : week)
+        for (const auto& p : m->players) {
+            if (p.xuid.empty()) continue;
+            auto it = byPlayer.find(p.xuid);
+            if (it == byPlayer.end()) {
+                order.push_back(p.xuid);
+                it = byPlayer.emplace(p.xuid, PlayerAgg{displayName(p.gamertag), 0, 0, 0}).first;
+            }
+            it->second.games++;
+            it->second.kills += p.kills;
+            it->second.deaths += p.deaths;
+        }
+
+    auto kdOf = [](const PlayerAgg& p) {
+        return static_cast<double>(p.kills) / static_cast<double>(std::max<long long>(1, p.deaths));
+    };
+
+    // Most active: highest games (first-seen order is the stable tie-break, as in
+    // the TS sort over the insertion-ordered Map values).
+    const PlayerAgg* mostActive = nullptr;
+    for (const auto& x : order) {
+        const PlayerAgg& p = byPlayer[x];
+        if (!mostActive || p.games > mostActive->games) mostActive = &p;
+    }
+    // MVP: best K/D among players with >=2 games.
+    const PlayerAgg* mvp = nullptr;
+    for (const auto& x : order) {
+        const PlayerAgg& p = byPlayer[x];
+        if (p.games < 2) continue;
+        if (!mvp || kdOf(p) > kdOf(*mvp)) mvp = &p;
+    }
+
+    std::vector<std::string> leaders;
+    for (Category cat : BOARD_CATEGORIES) {
+        std::vector<MMR> ranked = csrRowsFor(matches, cat);  // games>0, skill desc
+        if (!ranked.empty()) {
+            const MMR& top = ranked.front();
+            leaders.push_back("**" + std::string(categoryLabel(cat)) + "** " + EMDASH + " " +
+                              displayName(top.gamertag) + " (" + csrText(csrFromSkill(top.skill)) +
+                              ")");
+        }
+    }
+
+    json fields = json::array();
+    fields.push_back({{"name", "Games this week"}, {"value", std::to_string(week.size())},
+                      {"inline", true}});
+    if (mostActive)
+        fields.push_back({{"name", "Most active"},
+                          {"value", mostActive->name + " (" + std::to_string(mostActive->games) +
+                                        ")"},
+                          {"inline", true}});
+    if (mvp)
+        fields.push_back({{"name", "MVP (K/D)"},
+                          {"value", mvp->name + " (" + util::toFixed2(kdOf(*mvp)) + ")"},
+                          {"inline", true}});
+    if (!leaders.empty())
+        fields.push_back({{"name", "Current leaders"}, {"value", util::join(leaders, "\n")}});
+
+    return json{{"title", std::string(CALENDAR) + " Weekly Recap " + EMDASH + " Halo 3 Customs"},
+                {"color", Embed::GOLD},
+                {"fields", fields},
+                {"timestamp", isoTimestamp(nowMsWall())}};
+}
+
+std::string matchChoiceLabel(const StoredMatch& m) {
+    std::vector<const StoredPlayer*> ps;
+    for (const auto& p : m.players) ps.push_back(&p);
+    std::sort(ps.begin(), ps.end(), [](const StoredPlayer* a, const StoredPlayer* b) {
+        return a->teamId != b->teamId ? a->teamId < b->teamId : a->standing < b->standing;
+    });
+    std::string roster;
+    for (size_t i = 0; i < ps.size(); ++i) {
+        if (i) roster += ", ";
+        roster += displayName(ps[i]->gamertag);
+    }
+    std::string s = m.gameTypeName + " (" + categoryLabel(categorize(m)) + ") " + EMDASH + " " +
+                    isoMinuteUtc(m.playedAt) + " " + EMDASH + " " + roster;
+    // ≤100 chars; trim on a code-unit boundary (best-effort, as the TS slice(97)).
+    if (s.size() > 100) s = s.substr(0, 97) + "\xE2\x80\xA6";  // …
+    return s;
 }

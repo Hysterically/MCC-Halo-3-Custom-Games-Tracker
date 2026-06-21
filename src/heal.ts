@@ -34,6 +34,7 @@ import {
   clearMatchResultsMsg,
   resultsRestyleTargets,
   recordedAtByMatch,
+  kvGet,
 } from "./db.ts";
 import { matchCsrChanges, matchWinChances, type CsrChange } from "./trueskill2.ts";
 import { renderCarnageCsrPng } from "./renderCarnage.ts";
@@ -108,10 +109,38 @@ export async function fetchWebhookMessages(
 }
 
 /**
+ * Webhook URLs that may have authored a results post, app-owned first. A post
+ * predating the app webhook was authored by the user webhook; a post carrying
+ * buttons by the app webhook. Trying each (404 → next) edits either correctly.
+ */
+async function resultsWebhookUrls(db: DB): Promise<string[]> {
+  const urls: string[] = [];
+  const app = await kvGet(db, "results_app_webhook");
+  if (app) urls.push(app);
+  const base = config.discordResultsWebhookUrl;
+  if (base && base !== app) urls.push(base);
+  return urls;
+}
+
+/**
  * PATCH one result post: new caption, old attachment replaced by the fresh PNG.
- * Returns false if the message vanished since we listed it (404).
+ * Tries each candidate webhook (the post's author is whichever doesn't 404).
+ * Returns false if the message vanished (404 on every candidate).
  */
 async function editResultMessage(
+  webhookUrls: string[],
+  messageId: string,
+  caption: string,
+  png: Buffer,
+): Promise<boolean> {
+  for (const webhookUrl of webhookUrls) {
+    if (await editResultMessageVia(webhookUrl, messageId, caption, png)) return true;
+  }
+  return false;
+}
+
+/** Edit via one specific webhook; true on success, false on 404 (wrong author). */
+async function editResultMessageVia(
   webhookUrl: string,
   messageId: string,
   caption: string,
@@ -264,6 +293,7 @@ export async function healStaleResults(
 
   const targets = await resultsRestyleTargets(db, RESULTS_FMT_VERSION, opts.force);
   if (!targets.length) return { adopted, restyled: 0, gone: 0 };
+  const editUrls = await resultsWebhookUrls(db);
 
   log(`re-styling ${targets.length} post${targets.length === 1 ? "" : "s"} to format v${RESULTS_FMT_VERSION}…`);
   let restyled = 0;
@@ -277,7 +307,7 @@ export async function healStaleResults(
     try {
       const report = toReport(match);
       const png = await renderCarnageCsrPng(report, changes, win);
-      const ok = await editResultMessage(webhookUrl, msgId, formatMatchCaption(report), png);
+      const ok = await editResultMessage(editUrls, msgId, formatMatchCaption(report), png);
       if (ok) {
         await setMatchResultsFmt(db, matchId, RESULTS_FMT_VERSION);
         restyled++;
@@ -315,7 +345,12 @@ export async function restyleResultPost(
   const win = matchWinChances(chrono, matchId) ?? undefined;
   const report = toReport(match);
   const png = await renderCarnageCsrPng(report, changes, win);
-  const ok = await editResultMessage(webhookUrl, msgId, formatMatchCaption(report), png);
+  const ok = await editResultMessage(
+    await resultsWebhookUrls(db),
+    msgId,
+    formatMatchCaption(report),
+    png,
+  );
   if (ok) {
     await setMatchResultsFmt(db, matchId, RESULTS_FMT_VERSION);
     return "restyled";

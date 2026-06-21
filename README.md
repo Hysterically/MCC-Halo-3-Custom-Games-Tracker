@@ -8,7 +8,10 @@ automatically.
   kills, deaths) in the results channel.
 - **The live leaderboard** — one always-up-to-date standings post with separate
   **2v2 / 4v4 / FFA** rankings, updated after every game.
-- Type `/leaderboard` or `/stats` in Discord to check standings on demand.
+- Type `/leaderboard` or `/stats` in Discord to check standings on demand —
+  with name autocomplete, and answers shown as clean rich embeds.
+- **A weekly recap** posts on Sunday evenings: games played, most active player,
+  MVP, and the current category leaders.
 
 It works by reading the match report files MCC saves on your PC after each game.
 No logins, no passwords, nothing to sign up for — it never touches your
@@ -45,7 +48,9 @@ combined leaderboard.
   [turso.tech](https://turso.tech) and set `DB_URL=libsql://…` and
   `DB_AUTH_TOKEN=…` on every host's PC.
 - **`/leaderboard` and `/stats` commands:** set `DISCORD_BOT_TOKEN=…` and
-  `DISCORD_GUILD_ID=…` (the guild id makes the commands show up instantly).
+  `DISCORD_GUILD_ID=…` (the guild id makes the commands show up instantly). The
+  bot also adds **Void / Exclude buttons** under each result post (admins only)
+  and posts the weekly recap — no extra setup beyond the token.
 
 ---
 
