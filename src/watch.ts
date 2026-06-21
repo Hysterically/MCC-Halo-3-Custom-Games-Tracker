@@ -30,7 +30,7 @@ import {
 import { matchCsrChanges, matchWinChances, type CsrChange, type MatchWinChances } from "./trueskill2.ts";
 import { parseCarnageFile, type CarnageReport } from "./parseCarnage.ts";
 import { findMapInfo } from "./mapInfo.ts";
-import { postCsrMatchResult, upsertCsrLeaderboard, startBot } from "./discord.ts";
+import { postCsrMatchResultWithControls, upsertCsrLeaderboard, startBot } from "./discord.ts";
 import { healStaleResults } from "./heal.ts";
 import { checkForUpdate } from "./updateCheck.ts";
 import { RESULTS_FMT_VERSION } from "./version.ts";
@@ -164,9 +164,11 @@ async function onFile(path: string): Promise<void> {
   }
 
   try {
-    // Capture the #game-results message id so the game can later be voided via /delete.
-    const msgId = await postCsrMatchResult(
-      config.discordResultsWebhookUrl,
+    // Capture the #game-results message id so the game can later be voided via
+    // /delete or the Void button. Posts with buttons when the bot's app-owned
+    // webhook is available, else a plain post to the configured webhook.
+    const msgId = await postCsrMatchResultWithControls(
+      db,
       report,
       csrChanges ?? undefined,
       winChances ?? undefined,
