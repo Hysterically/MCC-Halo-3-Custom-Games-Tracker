@@ -54,6 +54,12 @@ const EXP_CAP = 200; // paper caps experience at 200
 const PERF_SPREAD = BETA; // ~4.17 rating pts per K/D std-dev (all modes)
 const OBS_BETA = 2 * BETA; // ~8.33 — performance-observation noise
 
+// Win-chance bar: the displayed bar is a plain monotonic (logistic) function of the
+// gap between the two teams' *displayed* average CSR — the same numbers printed beside
+// the bar — so it can never contradict them. Scale is CSR points per e-fold of odds,
+// anchored so a ~127-CSR average gap reads ~73% (matches the reference design).
+const WIN_BAR_CSR_SCALE = 130;
+
 function experienceOffset(games: number): number {
   return EXP_OFFSET_MAX * Math.exp(-Math.min(games, EXP_CAP) / EXP_OFFSET_SCALE);
 }
@@ -581,11 +587,13 @@ export function matchCsrChanges(
 
 /**
  * Pre-match win probability + average CSR for each team of a rated 2-team match,
- * for the result-post win bar. Computed from the ratings *before* this match (the
- * same pre-replay `matchCsrChanges` diffs against), using the TrueSkill team
- * performance model: `teamMu = Σ μ`, `teamVar = Σ (σ² + β²)`, and
- * `P(A) = Φ((teamMuA − teamMuB) / √(varA + varB))`. The team listed first is the
- * winner (so the bar's left side matches the board's winner-first ordering).
+ * for the result-post win bar. Each team's average CSR is the mean of its rated
+ * players' pre-match CSR (the ratings *before* this match — the same pre-replay
+ * `matchCsrChanges` diffs against). The bar is a plain monotonic function of the
+ * gap between those two *displayed* averages — `P(A) = 1/(1 + e^(−(avgA − avgB)/
+ * WIN_BAR_CSR_SCALE))` — so it can never disagree with the numbers printed beside
+ * it. The team listed first is the winner (so the bar's left side matches the
+ * board's winner-first ordering).
  *
  * Returns null unless the match is on-format, has teams, and groups into exactly
  * two teams that each have at least one rated player.
@@ -606,8 +614,6 @@ export function matchWinChances(
 
   interface Agg {
     teamId: number;
-    mu: number;
-    variance: number;
     csrSum: number;
     n: number;
   }
@@ -617,10 +623,8 @@ export function matchWinChances(
     const r = pre.get(p.xuid);
     const mu = r?.mu ?? MU0;
     const sigma = r?.sigma ?? SIGMA0;
-    const t = teams.get(p.teamId) ?? { teamId: p.teamId, mu: 0, variance: 0, csrSum: 0, n: 0 };
-    t.mu += mu;
-    t.variance += sigma * sigma + BETA * BETA;
-    t.csrSum += csrFromSkill(mu - 3 * sigma).value;
+    const t = teams.get(p.teamId) ?? { teamId: p.teamId, csrSum: 0, n: 0 };
+    t.csrSum += csrFromSkill(mu - 3 * sigma).value; // unrated -> CSR 0
     t.n += 1;
     teams.set(p.teamId, t);
   }
@@ -634,11 +638,14 @@ export function matchWinChances(
     }
     return x.teamId - y.teamId;
   });
-  const probA = cdf((A.mu - B.mu) / Math.sqrt(A.variance + B.variance));
+  const avgA = Math.round(A.csrSum / A.n);
+  const avgB = Math.round(B.csrSum / B.n);
+  // Bar = logistic of the gap between the two displayed average CSRs.
+  const probA = 1 / (1 + Math.exp(-(avgA - avgB) / WIN_BAR_CSR_SCALE));
   return {
     teams: [
-      { teamId: A.teamId, avgCsr: Math.round(A.csrSum / A.n), winProb: probA },
-      { teamId: B.teamId, avgCsr: Math.round(B.csrSum / B.n), winProb: 1 - probA },
+      { teamId: A.teamId, avgCsr: avgA, winProb: probA },
+      { teamId: B.teamId, avgCsr: avgB, winProb: 1 - probA },
     ],
   };
 }

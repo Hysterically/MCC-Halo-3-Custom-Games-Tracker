@@ -28,6 +28,12 @@ constexpr int EXP_CAP = 200;
 constexpr double PERF_SPREAD = BETA;    // ~4.17 rating pts per K/D std-dev
 constexpr double OBS_BETA = 2 * BETA;   // ~8.33 — performance-observation noise
 
+// Win-chance bar: the displayed bar is a plain monotonic (logistic) function of the
+// gap between the two teams' *displayed* average CSR — the same numbers printed beside
+// the bar — so it can never contradict them. Scale is CSR points per e-fold of odds,
+// anchored so a ~127-CSR average gap reads ~73% (matches the reference design).
+constexpr double WIN_BAR_CSR_SCALE = 130;
+
 constexpr double TINY = 2.222758749e-162;
 const double INF = std::numeric_limits<double>::infinity();
 
@@ -633,8 +639,6 @@ std::optional<MatchWinChances> matchWinChances(const std::vector<StoredMatch>& m
 
     struct Agg {
         int teamId = 0;
-        double mu = 0;
-        double variance = 0;
         long long csrSum = 0;
         int n = 0;
     };
@@ -646,9 +650,7 @@ std::optional<MatchWinChances> matchWinChances(const std::vector<StoredMatch>& m
         double sigma = it != pre.end() ? it->second.sigma : SIGMA0;
         Agg& t = teams[p.teamId];
         t.teamId = p.teamId;
-        t.mu += mu;
-        t.variance += sigma * sigma + BETA * BETA;
-        t.csrSum += csrFromSkill(mu - 3 * sigma).value;
+        t.csrSum += csrFromSkill(mu - 3 * sigma).value;  // unrated -> CSR 0
         t.n += 1;
     }
     if (teams.size() != 2) return std::nullopt;
@@ -666,12 +668,14 @@ std::optional<MatchWinChances> matchWinChances(const std::vector<StoredMatch>& m
     });
     const Agg& A = arr[0];
     const Agg& B = arr[1];
-    double probA = cdf((A.mu - B.mu) / std::sqrt(A.variance + B.variance));
+    int avgA = static_cast<int>(std::lround(static_cast<double>(A.csrSum) / A.n));
+    int avgB = static_cast<int>(std::lround(static_cast<double>(B.csrSum) / B.n));
+
+    // Bar = logistic of the gap between the two displayed average CSRs.
+    double probA = 1.0 / (1.0 + std::exp(-(avgA - avgB) / WIN_BAR_CSR_SCALE));
 
     MatchWinChances out;
-    out.teams[0] = {A.teamId, static_cast<int>(std::lround(static_cast<double>(A.csrSum) / A.n)),
-                    probA};
-    out.teams[1] = {B.teamId, static_cast<int>(std::lround(static_cast<double>(B.csrSum) / B.n)),
-                    1.0 - probA};
+    out.teams[0] = {A.teamId, avgA, probA};
+    out.teams[1] = {B.teamId, avgB, 1.0 - probA};
     return out;
 }
