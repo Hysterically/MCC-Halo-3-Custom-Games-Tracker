@@ -303,9 +303,9 @@ void drawWinBar(Graphics& g, const MatchWinChances& win, const StringFormat* fmt
 
     // Label row beneath: "<Blue> 58%   Chances of Winning   42% <Red>".
     const float labelY = BAR_TOP + BAR_H + 14;
-    SolidBrush blueTint(Color(0xcf, 0xe0, 0xfb));
-    SolidBrush redTint(Color(0xf6, 0xcd, 0xca));
-    SolidBrush grayTint(Color(0x8a, 0x93, 0x9e));
+    SolidBrush blueTint(Color(0xff, 0xff, 0xff));
+    SolidBrush redTint(Color(0xff, 0xff, 0xff));
+    SolidBrush grayTint(Color(0xff, 0xff, 0xff));
     int pctA = static_cast<int>(std::lround(A.winProb * 100));
     int pctB = static_cast<int>(std::lround(B.winProb * 100));
     drawText(g, nameA + L" " + std::to_wstring(pctA) + L"%", labelFont, blueTint, barLeft, labelY,

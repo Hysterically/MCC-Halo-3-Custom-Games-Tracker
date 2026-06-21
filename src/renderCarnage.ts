@@ -243,13 +243,13 @@ function drawWinBar(ctx: SKRSContext2D, win: MatchWinChances): void {
   const labelY = BAR_TOP + BAR_H + 14;
   ctx.font = `11px ${FONT}`;
   ctx.textAlign = "left";
-  ctx.fillStyle = "#cfe0fb";
+  ctx.fillStyle = "#ffffff";
   ctx.fillText(`${nameA} ${Math.round(a.winProb * 100)}%`, barLeft, labelY);
   ctx.textAlign = "right";
-  ctx.fillStyle = "#f6cdca";
+  ctx.fillStyle = "#ffffff";
   ctx.fillText(`${Math.round(b.winProb * 100)}% ${nameB}`, barRight, labelY);
   ctx.textAlign = "center";
-  ctx.fillStyle = "#8a939e";
+  ctx.fillStyle = "#ffffff";
   ctx.fillText("Chances of Winning", (barLeft + barRight) / 2, labelY);
   ctx.textAlign = "left";
 }
