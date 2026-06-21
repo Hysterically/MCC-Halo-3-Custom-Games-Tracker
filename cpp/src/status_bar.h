@@ -29,17 +29,22 @@ std::string gray(const std::string&);
 void banner(const std::string& title,
             const std::vector<std::pair<std::string, std::string>>& rows);
 
+// The bot's gateway state, for the footer's `bot ●` indicator.
+enum class Bot { Off, Connecting, Online };
+
 // The live status footer (mirror of src/term.ts StatusBar). log()/logErr() print
-// a line with the footer wiped and redrawn around it so the scrolling log never
-// collides with it; recordMatch()/setWatching()/setTotal() update the footer.
-// Thread-safe: a background ticker animates the spinner.
+// a line (timestamped + footer-safe) with the footer wiped and redrawn around it;
+// recordMatch()/setWatching()/setTotal()/setBot()/setLastPost() update the strip
+// and the console window title. Thread-safe: a background ticker animates the spinner.
 class StatusBar {
 public:
     void start();   // begin the spinner ticker (console only)
     void stop();    // wipe the footer and stop the ticker
     void setWatching(bool on);
     void setTotal(long long n);
-    void recordMatch(const std::string& label);
+    void setBot(Bot state);
+    void setLastPost(bool ok);
+    void recordMatch(const std::string& label, const std::string& category = "");
     void log(const std::string& line);     // info line, footer-safe
     void logErr(const std::string& line);  // error line (red tag), footer-safe
 };

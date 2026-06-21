@@ -39,6 +39,7 @@
 #include "heal.h"
 #include "http.h"
 #include "render_csr_leaderboard.h"
+#include "status_bar.h"
 #include "util.h"
 
 using nlohmann::json;
@@ -506,6 +507,7 @@ private:
                 registerCommands();
                 std::cout << "[discord] bot online as "
                           << d["user"].value("username", "?") << "; commands registered\n";
+                term::statusBar().setBot(term::Bot::Online);
                 // Provision our own webhook in the results channel so per-match
                 // posts can carry the Void/Exclude buttons (plain webhooks strip
                 // components). Idempotent (kv-cached); safe to call each READY.
