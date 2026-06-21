@@ -68,9 +68,10 @@ struct MatchWinChances {
 };
 
 // Per-team pre-match win probability + average CSR for the result-post win bar.
-// Computed from the ratings *before* this match using the TrueSkill team
-// performance model. Returns nullopt unless the match is on-format, has teams,
-// and groups into exactly two teams that each have a rated player. Mirrors
-// matchWinChances in src/trueskill2.ts.
+// Each team's average CSR is the mean of its rated players' pre-match CSR; the bar
+// is a plain monotonic (logistic) function of the gap between the two displayed
+// averages, so it can never disagree with the numbers printed beside it. Returns
+// nullopt unless the match is on-format, has teams, and groups into exactly two
+// teams that each have a rated player. Mirrors matchWinChances in src/trueskill2.ts.
 std::optional<MatchWinChances> matchWinChances(const std::vector<StoredMatch>& matches,
                                                const std::string& matchId);
