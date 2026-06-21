@@ -829,10 +829,12 @@ int cmdWatch() {
         }
 
         try {
-            // Capture the #game-results message id so the game can later be voided via /delete.
-            std::string msgId = postCsrMatchResult(config().discordResultsWebhookUrl, *report,
-                                                   csrChanges.empty() ? nullptr : &csrChanges,
-                                                   winChances ? &*winChances : nullptr);
+            // Capture the #game-results message id so the game can later be voided via /delete
+            // or the Void button. Posts with buttons when the bot's app-owned webhook is
+            // available, else a plain post to the configured webhook.
+            std::string msgId = postCsrMatchResultWithControls(
+                *db, *report, csrChanges.empty() ? nullptr : &csrChanges,
+                winChances ? &*winChances : nullptr);
             if (!msgId.empty()) {
                 db->setMatchResultsMsg(report->matchId, msgId);
                 // Stamp the layout version so the startup heal never re-styles a fresh post.

@@ -8,6 +8,7 @@
 #include <iostream>
 
 #include "category.h"
+#include "config.h"
 #include "format.h"
 #include "http.h"
 #include "render_carnage.h"
@@ -20,10 +21,11 @@ namespace {
 
 const std::vector<std::string> JSON_HDR = {"Content-Type: application/json"};
 
-std::string messageBody(const std::string& content) {
+std::string messageBody(const std::string& content, const json* components = nullptr) {
     json j;
     j["content"] = content;
     j["allowed_mentions"] = {{"parse", json::array()}};
+    if (components) j["components"] = *components;
     return j.dump();
 }
 
@@ -42,12 +44,15 @@ std::string withWait(const std::string& url) {
 }
 
 // POST with ?wait=true so Discord returns the created message (incl. id).
-// With `png` the message is the attachment instead of text content.
+// With `png` the message is the attachment instead of text content. `components`
+// (e.g. an action row) is attached only when non-null.
 std::string postAndReturnId(const std::string& url, const std::string& content,
-                            const std::vector<unsigned char>* png = nullptr) {
-    HttpResponse r = png ? httpPostMultipart(withWait(url), messageBody(content), "files[0]",
-                                             "leaderboard.png", "image/png", *png)
-                         : httpRequest("POST", withWait(url), JSON_HDR, messageBody(content));
+                            const std::vector<unsigned char>* png = nullptr,
+                            const json* components = nullptr) {
+    HttpResponse r = png ? httpPostMultipart(withWait(url), messageBody(content, components),
+                                             "files[0]", "leaderboard.png", "image/png", *png)
+                         : httpRequest("POST", withWait(url), JSON_HDR,
+                                       messageBody(content, components));
     if (r.networkError) throw std::runtime_error("Discord webhook POST: " + r.error);
     if (!r.ok())
         throw std::runtime_error("Discord webhook " + std::to_string(r.status) + ": " + r.body);
@@ -200,7 +205,7 @@ void upsertLeaderboard(const std::optional<std::string>& url, Db& db, EloOptions
 // created message id — the handle /delete uses to void a game.
 std::string postCsrMatchResult(const std::optional<std::string>& url, const CarnageReport& report,
                                const std::map<std::string, CsrChange>* csrChanges,
-                               const MatchWinChances* win) {
+                               const MatchWinChances* win, const json* components) {
     if (!url) return "";
 
     std::vector<unsigned char> png;
@@ -211,14 +216,51 @@ std::string postCsrMatchResult(const std::optional<std::string>& url, const Carn
                   << "\n";
     }
     if (png.empty())
-        return postAndReturnId(*url, formatMatchResult(report) + formatCsrLine(report, csrChanges));
+        return postAndReturnId(*url, formatMatchResult(report) + formatCsrLine(report, csrChanges),
+                               nullptr, components);
 
-    HttpResponse r = httpPostMultipart(withWait(*url), messageBody(formatMatchCaption(report)),
-                                       "files[0]", "carnage-csr.png", "image/png", png);
+    HttpResponse r =
+        httpPostMultipart(withWait(*url), messageBody(formatMatchCaption(report), components),
+                          "files[0]", "carnage-csr.png", "image/png", png);
     if (r.networkError) throw std::runtime_error("Discord webhook POST: " + r.error);
     if (!r.ok())
         throw std::runtime_error("Discord webhook " + std::to_string(r.status) + ": " + r.body);
     return json::parse(r.body).at("id").get<std::string>();
+}
+
+nlohmann::json matchButtons(const std::string& matchId) {
+    // type 1 = action row; type 2 = button; style 4 = danger (Void), 2 = secondary (Exclude).
+    return json::array({{{"type", 1},
+                         {"components",
+                          json::array({{{"type", 2},
+                                        {"style", 4},
+                                        {"label", "Void"},
+                                        {"custom_id", "void:" + matchId}},
+                                       {{"type", 2},
+                                        {"style", 2},
+                                        {"label", "Exclude"},
+                                        {"custom_id", "exclude:" + matchId}}})}}});
+}
+
+std::vector<std::string> resultsWebhookCandidates(Db& db) {
+    std::vector<std::string> urls;
+    std::optional<std::string> app = db.kvGet(APP_WEBHOOK_KEY);
+    if (app) urls.push_back(*app);
+    const auto& base = config().discordResultsWebhookUrl;
+    if (base && (!app || *base != *app)) urls.push_back(*base);
+    return urls;
+}
+
+std::string postCsrMatchResultWithControls(Db& db, const CarnageReport& report,
+                                           const std::map<std::string, CsrChange>* csrChanges,
+                                           const MatchWinChances* win) {
+    std::optional<std::string> appUrl = db.kvGet(APP_WEBHOOK_KEY);
+    std::optional<std::string> url = appUrl ? appUrl : config().discordResultsWebhookUrl;
+    if (appUrl) {
+        json comps = matchButtons(report.matchId);
+        return postCsrMatchResult(url, report, csrChanges, win, &comps);
+    }
+    return postCsrMatchResult(url, report, csrChanges, win, nullptr);
 }
 
 // Refresh the live CSR leaderboard as THREE persistent messages (one per board

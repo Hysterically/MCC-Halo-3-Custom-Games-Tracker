@@ -157,10 +157,25 @@ std::vector<ChannelMessage> fetchWebhookMessages(const std::string& webhookUrl,
     return ours;
 }
 
-// PATCH one result post: new caption, old attachment replaced by the fresh PNG.
-// Returns false if the message vanished since we listed it (404).
-bool editResultMessage(const std::string& webhookUrl, const std::string& messageId,
-                       const std::string& caption, const std::vector<std::uint8_t>& png) {
+// Webhook URLs that may have authored a results post, app-owned first, then the
+// user webhook from config (if different). A post predating the app webhook was
+// authored by the user webhook; a post carrying buttons by the app webhook.
+// Trying each (404 → next) edits either correctly. Mirrors resultsWebhookUrls in
+// src/heal.ts.
+std::vector<std::string> resultsWebhookUrls(Db& db) {
+    std::vector<std::string> urls;
+    std::optional<std::string> app = db.kvGet("results_app_webhook");
+    if (app) urls.push_back(*app);
+    const auto& base = config().discordResultsWebhookUrl;
+    if (base && (!app || *base != *app)) urls.push_back(*base);
+    return urls;
+}
+
+// PATCH one result post via ONE specific webhook: new caption, old attachment
+// replaced by the fresh PNG. Returns true on success, false on 404 (the post was
+// authored by a different webhook, or has vanished).
+bool editResultMessageVia(const std::string& webhookUrl, const std::string& messageId,
+                          const std::string& caption, const std::vector<std::uint8_t>& png) {
     json payload;
     payload["content"] = caption;
     payload["attachments"] = json::array({json{{"id", 0}}});  // keep ONLY files[0]
@@ -180,6 +195,16 @@ bool editResultMessage(const std::string& webhookUrl, const std::string& message
                                      r.body);
         return true;
     }
+}
+
+// PATCH one result post, trying each candidate webhook (the post's author is
+// whichever doesn't 404). Returns false if the message vanished (404 on every
+// candidate). Mirrors editResultMessage in src/heal.ts.
+bool editResultMessage(const std::vector<std::string>& webhookUrls, const std::string& messageId,
+                       const std::string& caption, const std::vector<std::uint8_t>& png) {
+    for (const auto& url : webhookUrls)
+        if (editResultMessageVia(url, messageId, caption, png)) return true;
+    return false;
 }
 
 // --- Tier B: adopt orphan posts ----------------------------------------------
@@ -251,6 +276,7 @@ HealStats healStaleResults(Db& db, bool force) {
 
     std::vector<RestyleTarget> targets = db.resultsRestyleTargets(RESULTS_FMT_VERSION, force);
     if (targets.empty()) return stats;
+    std::vector<std::string> editUrls = resultsWebhookUrls(db);
 
     log("re-styling " + std::to_string(targets.size()) + " post" +
         (targets.size() == 1 ? "" : "s") + " to format v" + std::to_string(RESULTS_FMT_VERSION) +
@@ -264,7 +290,7 @@ HealStats healStaleResults(Db& db, bool force) {
             CarnageReport report = fromStoredMatch(*it->second);
             std::vector<std::uint8_t> png = renderCarnageCsrPng(
                 report, changes.empty() ? nullptr : &changes, win ? &*win : nullptr);
-            bool ok = editResultMessage(*webhook, t.msgId, formatMatchCaption(report), png);
+            bool ok = editResultMessage(editUrls, t.msgId, formatMatchCaption(report), png);
             if (ok) {
                 db.setMatchResultsFmt(t.matchId, RESULTS_FMT_VERSION);
                 ++stats.restyled;
@@ -301,7 +327,7 @@ std::string restyleResultPost(Db& db, const std::string& matchId, const std::str
     CarnageReport report = fromStoredMatch(*match);
     std::vector<std::uint8_t> png =
         renderCarnageCsrPng(report, changes.empty() ? nullptr : &changes, win ? &*win : nullptr);
-    bool ok = editResultMessage(*webhook, msgId, formatMatchCaption(report), png);
+    bool ok = editResultMessage(resultsWebhookUrls(db), msgId, formatMatchCaption(report), png);
     if (ok) {
         db.setMatchResultsFmt(matchId, RESULTS_FMT_VERSION);
         return "restyled";
