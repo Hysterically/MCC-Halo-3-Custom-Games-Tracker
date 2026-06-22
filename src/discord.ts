@@ -1113,14 +1113,18 @@ export async function startBot(
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
   client.once("clientReady", async (c) => {
+    // Gateway is live the moment the ready event fires — surface that in the
+    // status bar before the (slower, fallible) command registration so a
+    // hang/throw there can't leave the footer stuck on "connecting".
+    statusBar.setBot("online");
+    console.log(`[discord] bot online as ${c.user.tag}`);
     const rest = new REST({ version: "10" }).setToken(token);
     if (guildId) {
       await rest.put(Routes.applicationGuildCommands(c.user.id, guildId), { body: COMMANDS });
     } else {
       await rest.put(Routes.applicationCommands(c.user.id), { body: COMMANDS });
     }
-    console.log(`[discord] bot online as ${c.user.tag}; commands registered`);
-    statusBar.setBot("online");
+    console.log("[discord] commands registered");
     // Provision our own webhook in the results channel so per-match posts can
     // carry the Void/Exclude buttons (plain webhooks strip components).
     if (resultsWebhookUrl) {

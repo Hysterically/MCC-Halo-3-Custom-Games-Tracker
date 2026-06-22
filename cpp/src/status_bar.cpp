@@ -161,7 +161,7 @@ void drawFooterLocked() {
         p << sep << "last: " << g.lastMatch;
         if (g.lastMatchAtMs) p << " " << gray("(" + ago(g.lastMatchAtMs) + ")");
     }
-    std::cout << "\r\x1b[K" << dim(p.str());
+    std::cout << "\r\x1b[K" << p.str();
     g.footerVisible = true;
 }
 
