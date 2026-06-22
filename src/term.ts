@@ -232,7 +232,7 @@ class StatusBar {
       const when = s.lastMatchAt ? c.gray(`(${ago(s.lastMatchAt)})`) : "";
       parts.push(`last: ${s.lastMatch} ${when}`.trimEnd());
     }
-    process.stdout.write("\r\x1b[K" + c.dim(parts.join(c.gray(" · "))));
+    process.stdout.write("\r\x1b[K" + parts.join(c.gray(" · ")));
     this.footerVisible = true;
   }
 }

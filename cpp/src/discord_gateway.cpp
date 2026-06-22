@@ -504,10 +504,14 @@ private:
             if (t == "READY") {
                 const json& d = p["d"];
                 appId_ = d["user"].value("id", "");
-                registerCommands();
-                std::cout << "[discord] bot online as "
-                          << d["user"].value("username", "?") << "; commands registered\n";
+                // Gateway is live the moment READY arrives — surface that in the
+                // status bar before the (slower, fallible) command registration so
+                // a hang/throw there can't leave the footer stuck on "connecting".
                 term::statusBar().setBot(term::Bot::Online);
+                std::cout << "[discord] bot online as "
+                          << d["user"].value("username", "?") << "\n";
+                registerCommands();
+                std::cout << "[discord] commands registered\n";
                 // Provision our own webhook in the results channel so per-match
                 // posts can carry the Void/Exclude buttons (plain webhooks strip
                 // components). Idempotent (kv-cached); safe to call each READY.
