@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -11,6 +12,7 @@
 #include <map>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
@@ -564,7 +566,7 @@ int cmdRenderBoard(const std::vector<std::string>& args) {
         sections = sampleCsrBoardSections();
     } else {
         auto db = openDb(config().dbUrl, config().dbAuthToken);
-        sections = buildCsrBoardSections(db->matchesChrono());
+        sections = buildCsrBoardSections(db->matchesChrono(), hiddenXuids(*db));
     }
     std::string out = "leaderboard.png";
     for (const auto& a : args)
@@ -746,6 +748,80 @@ int cmdExclude(const std::vector<std::string>& args) {
         std::cout << "[discord] no tracked #game-results post id \xE2\x80\x94 re-style by hand if "
                      "needed.\n";
     }
+
+    if (config().discordLeaderboardWebhookUrl) {
+        upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, *db);
+        std::cout << "[discord] leaderboard message refreshed.\n";
+    }
+    return 0;
+}
+
+int cmdHidePlayer(const std::vector<std::string>& args) {
+    bool confirm = std::find(args.begin(), args.end(), "--confirm") != args.end();
+    bool show = std::find(args.begin(), args.end(), "--show") != args.end();
+    std::string query;
+    for (const auto& a : args)
+        if (a.rfind("--", 0) != 0) {
+            query = a;
+            break;
+        }
+    if (query.empty()) {
+        std::cerr << "Usage: h3-tracker hide-player <gamertag|xuid> [--show] [--confirm]\n";
+        return 1;
+    }
+    auto lower = [](std::string s) {
+        for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return s;
+    };
+    std::string q = lower(query);
+
+    auto db = openDb(config().dbUrl, config().dbAuthToken);
+    std::vector<StoredMatch> matches = db->matchesChrono();
+
+    // Resolve to a single XUID: exact XUID match, else case-insensitive gamertag.
+    std::map<std::string, std::pair<std::string, int>> found;  // xuid -> (gamertag, games)
+    for (const auto& m : matches)
+        for (const auto& p : m.players)
+            if (lower(p.xuid) == q || lower(p.gamertag) == q) {
+                auto& e = found[p.xuid];
+                e.first = p.gamertag;
+                e.second++;
+            }
+
+    if (found.empty()) {
+        std::cout << "No player matching \"" << query << "\" found in " << matches.size()
+                  << " matches.\n";
+        return 1;
+    }
+    if (found.size() > 1) {
+        std::cout << "\"" << query << "\" is ambiguous \xE2\x80\x94 matched " << found.size()
+                  << " players. Re-run with one XUID:\n";
+        for (const auto& [xuid, info] : found)
+            std::cout << "  " << xuid << "  \"" << info.first << "\" (" << info.second
+                      << " games)\n";
+        return 1;
+    }
+
+    const auto& [xuid, info] = *found.begin();
+    std::unordered_set<std::string> already = hiddenXuids(*db);
+    bool isHidden = already.count(xuid) != 0;
+
+    std::cout << "Target player:\n"
+              << "  xuid     : " << xuid << "\n"
+              << "  gamertag : " << displayName(info.first) << " (raw \"" << info.first << "\", "
+              << info.second << " games)\n"
+              << "  hidden   : " << (isHidden ? "true" : "false") << " -> "
+              << (!show ? "true" : "false") << "\n";
+
+    if (!confirm) {
+        std::cout << "\nDry run. Re-run with --confirm to " << (show ? "un-hide" : "hide")
+                  << " this player.\n";
+        return 0;
+    }
+
+    bool changed = setPlayerHidden(*db, xuid, !show);
+    std::cout << "\n" << (changed ? (show ? "Un-hid " : "Hid ") : "No change \xE2\x80\x94 ")
+              << displayName(info.first) << ".\n";
 
     if (config().discordLeaderboardWebhookUrl) {
         upsertCsrLeaderboard(config().discordLeaderboardWebhookUrl, *db);

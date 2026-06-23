@@ -34,12 +34,15 @@ std::string formatLeaderboardSection(const std::vector<StoredMatch>& matches, El
                                      Category cat);
 
 // The combined CSR (TrueSkill 2) leaderboard: one section per board category.
-// The PNG fallback and the console `board` output.
-std::string formatCsrLeaderboard(const std::vector<StoredMatch>& matches);
+// The PNG fallback and the console `board` output. Players in `hidden` (by XUID)
+// are suppressed from every section.
+std::string formatCsrLeaderboard(const std::vector<StoredMatch>& matches,
+                                 const std::unordered_set<std::string>& hidden = {});
 
 // One category's CSR leaderboard section as standalone text (the 🎖️ heading +
 // code block), the per-message fallback when its PNG fails to render.
-std::string formatCsrLeaderboardSection(const std::vector<StoredMatch>& matches, Category cat);
+std::string formatCsrLeaderboardSection(const std::vector<StoredMatch>& matches, Category cat,
+                                        const std::unordered_set<std::string>& hidden = {});
 
 // Detailed per-match summary: gametype, teams or FFA, K/D/A, winner.
 // `eloChanges` (xuid -> post-match rating + change, nullable) appends a

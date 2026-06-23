@@ -33,12 +33,16 @@ struct CsrBoardSection {
 };
 
 // One category's CSR table, titled "<CAT> LEADERBOARD" — ranked best-first,
-// only players with games. Mirrors csrRows in src/discord.ts.
-CsrBoardSection buildCsrBoardSection(const std::vector<StoredMatch>& matches, Category cat);
+// only players with games, minus any in `hidden` (by XUID). Mirrors csrRows in
+// src/discord.ts.
+CsrBoardSection buildCsrBoardSection(const std::vector<StoredMatch>& matches, Category cat,
+                                     const std::unordered_set<std::string>& hidden = {});
 
 // Per-category CSR tables in display order (2v2 / 4v4 / FFA), for the combined
 // /leaderboard PNG. Mirrors buildCsrBoardSections in src/discord.ts.
-std::vector<CsrBoardSection> buildCsrBoardSections(const std::vector<StoredMatch>& matches);
+std::vector<CsrBoardSection> buildCsrBoardSections(
+    const std::vector<StoredMatch>& matches,
+    const std::unordered_set<std::string>& hidden = {});
 
 // Throws on any GDI+ failure; callers fall back to the text leaderboard.
 std::vector<std::uint8_t> renderCsrLeaderboardPng(const std::vector<CsrBoardSection>& sections,

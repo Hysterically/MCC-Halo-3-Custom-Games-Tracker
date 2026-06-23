@@ -36,6 +36,7 @@ import {
   resultsRestyleTargets,
   deleteMatch,
   setMatchExcluded,
+  hiddenXuids,
   kvGet,
   kvClaim,
   kvCas,
@@ -648,9 +649,9 @@ export async function postCsrMatchResultWithControls(
 }
 
 /** Per-category CSR rows, ranked best-first — the shape the PNG renderer wants. */
-function csrRows(matches: StoredMatch[]): CsrRow[] {
+function csrRows(matches: StoredMatch[], hidden: ReadonlySet<string> = new Set()): CsrRow[] {
   return rateCategory(matches)
-    .filter((r) => r.games > 0)
+    .filter((r) => r.games > 0 && !hidden.has(r.xuid))
     .sort((a, b) => b.skill - a.skill)
     .map((r) => ({
       gamertag: r.gamertag,
@@ -666,10 +667,14 @@ function csrRows(matches: StoredMatch[]): CsrRow[] {
 }
 
 /** Render one CSR board section to PNG, or undefined if rendering fails. */
-async function tryRenderCsrSection(cat: Category, matches: StoredMatch[]): Promise<Buffer | undefined> {
+async function tryRenderCsrSection(
+  cat: Category,
+  matches: StoredMatch[],
+  hidden: ReadonlySet<string> = new Set(),
+): Promise<Buffer | undefined> {
   try {
     return await renderCsrLeaderboardPng([
-      { title: `${CATEGORY_LABEL[cat].toUpperCase()} LEADERBOARD`, rows: csrRows(matches) },
+      { title: `${CATEGORY_LABEL[cat].toUpperCase()} LEADERBOARD`, rows: csrRows(matches, hidden) },
     ]);
   } catch (e) {
     console.warn("[discord] CSR leaderboard render failed, falling back to text:", (e as Error).message);
@@ -678,9 +683,14 @@ async function tryRenderCsrSection(cat: Category, matches: StoredMatch[]): Promi
 }
 
 /** Text fallback for one CSR board category (mirrors {@link formatSection}). */
-function formatCsrSection(cat: Category, matches: StoredMatch[], limit = 20): string {
+function formatCsrSection(
+  cat: Category,
+  matches: StoredMatch[],
+  hidden: ReadonlySet<string> = new Set(),
+  limit = 20,
+): string {
   const heading = `__**🎖️ ${CATEGORY_LABEL[cat]} — TrueSkill 2**__`;
-  const rows = csrRows(matches).slice(0, limit);
+  const rows = csrRows(matches, hidden).slice(0, limit);
   if (!rows.length) return `${heading}\n_No matches yet._`;
   const names = rows.map((r) => displayName(r.gamertag));
   const nameW = Math.max(6, ...names.map((n) => n.length));
@@ -708,6 +718,7 @@ function formatCsrSection(cat: Category, matches: StoredMatch[], limit = 20): st
 export async function upsertCsrLeaderboard(url: string | undefined, db: DB): Promise<void> {
   if (!url) return;
   const matches = await matchesChrono(db);
+  const hidden = await hiddenXuids(db);
   // Drop the old single combined message if this webhook still tracks one.
   await retireCombinedLeaderboard(url, db);
 
@@ -715,8 +726,8 @@ export async function upsertCsrLeaderboard(url: string | undefined, db: DB): Pro
   const base = webhookId(url);
   for (const cat of LEADERBOARD_POST_ORDER) {
     const catMatches = byCat.get(cat) ?? [];
-    const png = await tryRenderCsrSection(cat, catMatches);
-    const content = png ? "" : formatCsrSection(cat, catMatches);
+    const png = await tryRenderCsrSection(cat, catMatches, hidden);
+    const content = png ? "" : formatCsrSection(cat, catMatches, hidden);
     // Reuse the `lb_msg:` slot the ELO board used: on the now-CSR #leaderboard
     // this edits the existing per-category messages in place rather than
     // leaving the old ELO ones behind.
@@ -725,18 +736,24 @@ export async function upsertCsrLeaderboard(url: string | undefined, db: DB): Pro
 }
 
 /** Per-category CSR rating tables in display order, for the combined /leaderboard PNG. */
-function buildCsrBoardSections(matches: StoredMatch[]): { title: string; rows: CsrRow[] }[] {
+function buildCsrBoardSections(
+  matches: StoredMatch[],
+  hidden: ReadonlySet<string> = new Set(),
+): { title: string; rows: CsrRow[] }[] {
   const byCat = groupByCategory(matches);
   return BOARD_CATEGORIES.map((c) => ({
     title: `${CATEGORY_LABEL[c].toUpperCase()} LEADERBOARD`,
-    rows: csrRows(byCat.get(c) ?? []),
+    rows: csrRows(byCat.get(c) ?? [], hidden),
   }));
 }
 
 /** The full CSR leaderboard PNG (all categories), or undefined if rendering fails. */
-async function tryRenderCsrLeaderboard(matches: StoredMatch[]): Promise<Buffer | undefined> {
+async function tryRenderCsrLeaderboard(
+  matches: StoredMatch[],
+  hidden: ReadonlySet<string> = new Set(),
+): Promise<Buffer | undefined> {
   try {
-    return await renderCsrLeaderboardPng(buildCsrBoardSections(matches));
+    return await renderCsrLeaderboardPng(buildCsrBoardSections(matches, hidden));
   } catch (e) {
     console.warn("[discord] CSR leaderboard render failed, falling back to text:", (e as Error).message);
     return undefined;
@@ -744,9 +761,12 @@ async function tryRenderCsrLeaderboard(matches: StoredMatch[]): Promise<Buffer |
 }
 
 /** Text form of the full CSR leaderboard — the PNG fallback and console output. */
-export function formatCsrLeaderboard(matches: StoredMatch[]): string {
+export function formatCsrLeaderboard(
+  matches: StoredMatch[],
+  hidden: ReadonlySet<string> = new Set(),
+): string {
   const byCat = groupByCategory(matches);
-  const sections = BOARD_CATEGORIES.map((c) => formatCsrSection(c, byCat.get(c) ?? []));
+  const sections = BOARD_CATEGORIES.map((c) => formatCsrSection(c, byCat.get(c) ?? [], hidden));
   return ["**Halo 3 Customs — CSR Standings**", ...sections].join("\n\n");
 }
 
@@ -1148,14 +1168,15 @@ export async function startBot(
       const ix = i;
       if (ix.commandName === "leaderboard") {
         const matches = await matchesChrono(db);
-        const png = await tryRenderCsrLeaderboard(matches);
+        const hidden = await hiddenXuids(db);
+        const png = await tryRenderCsrLeaderboard(matches, hidden);
         if (png) {
           await ix.reply({
             embeds: [leaderboardEmbed()],
             files: [{ attachment: png, name: "leaderboard.png" }],
           });
         } else {
-          await ix.reply(formatCsrLeaderboard(matches));
+          await ix.reply(formatCsrLeaderboard(matches, hidden));
         }
       } else if (ix.commandName === "stats") {
         const query = ix.options.getString("player");

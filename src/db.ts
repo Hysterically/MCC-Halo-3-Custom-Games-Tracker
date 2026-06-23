@@ -193,6 +193,36 @@ export async function kvCas(db: DB, k: string, expected: string, next: string): 
   return res.rowsAffected === 1;
 }
 
+// --- hidden players ---------------------------------------------------------
+// A set of XUIDs that are kept in the data (their games still rate everyone
+// else) but suppressed from the rendered leaderboards. Stored as a JSON array
+// under the kv key `hidden_players` so every runner — TS or C++ — filters the
+// shared board consistently. Keyed by XUID (stable across gamertag changes).
+
+const HIDDEN_KEY = "hidden_players";
+
+/** The set of XUIDs currently hidden from the leaderboards. */
+export async function hiddenXuids(db: DB): Promise<Set<string>> {
+  const raw = await kvGet(db, HIDDEN_KEY);
+  if (!raw) return new Set();
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    return new Set(Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** Hide (or, with `hidden=false`, un-hide) a player by XUID. Returns true if it changed. */
+export async function setPlayerHidden(db: DB, xuid: string, hidden: boolean): Promise<boolean> {
+  const set = await hiddenXuids(db);
+  if (hidden ? set.has(xuid) : !set.has(xuid)) return false;
+  if (hidden) set.add(xuid);
+  else set.delete(xuid);
+  await kvSet(db, HIDDEN_KEY, JSON.stringify([...set]));
+  return true;
+}
+
 export async function hasMatch(db: DB, matchId: string): Promise<boolean> {
   const res = await db.execute({ sql: "SELECT 1 FROM matches WHERE match_id = ?", args: [matchId] });
   return res.rows.length > 0;

@@ -271,13 +271,15 @@ std::string postCsrMatchResultWithControls(Db& db, const CarnageReport& report,
 void upsertCsrLeaderboard(const std::optional<std::string>& url, Db& db) {
     if (!url) return;
     std::vector<StoredMatch> matches = db.matchesChrono();
+    std::unordered_set<std::string> hidden = hiddenXuids(db);
     retireCombinedLeaderboard(*url, db);
 
     std::string base = webhookId(*url);
     for (Category cat : LEADERBOARD_POST_ORDER) {
-        std::vector<unsigned char> pngData = tryRenderCsrSection(buildCsrBoardSection(matches, cat));
+        std::vector<unsigned char> pngData =
+            tryRenderCsrSection(buildCsrBoardSection(matches, cat, hidden));
         const std::vector<unsigned char>* png = pngData.empty() ? nullptr : &pngData;
-        std::string content = png ? "" : formatCsrLeaderboardSection(matches, cat);
+        std::string content = png ? "" : formatCsrLeaderboardSection(matches, cat, hidden);
         upsertOneMessage(*url, db, "lb_msg:" + base + ":" + categoryKey(cat), content, png);
     }
 }
