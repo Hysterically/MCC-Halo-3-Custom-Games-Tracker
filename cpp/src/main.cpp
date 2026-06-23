@@ -61,6 +61,7 @@ int main(int argc, char** argv) {
         if (cmd == "clear") return cmdClear();
         if (cmd == "restyle") return cmdRestyle(rest);
         if (cmd == "exclude") return cmdExclude(rest);
+        if (cmd == "hide-player") return cmdHidePlayer(rest);
         if (cmd == "parse") return cmdParse(rest);
         if (cmd == "inspect") return cmdInspect(rest);
         if (cmd == "show") return cmdShow(rest);

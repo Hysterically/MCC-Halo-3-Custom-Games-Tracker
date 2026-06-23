@@ -204,7 +204,8 @@ int sectionHeight(const CsrBoardSection& s, size_t limit) {
 
 }  // namespace
 
-CsrBoardSection buildCsrBoardSection(const std::vector<StoredMatch>& matches, Category cat) {
+CsrBoardSection buildCsrBoardSection(const std::vector<StoredMatch>& matches, Category cat,
+                                     const std::unordered_set<std::string>& hidden) {
     std::vector<StoredMatch> ms;
     for (const auto& m : matches)
         if (boardCategory(m) == cat) ms.push_back(m);
@@ -212,7 +213,7 @@ CsrBoardSection buildCsrBoardSection(const std::vector<StoredMatch>& matches, Ca
     std::vector<MMR> ratings = rateCategory(ms);
     std::vector<const MMR*> ranked;
     for (const auto& r : ratings)
-        if (r.games > 0) ranked.push_back(&r);
+        if (r.games > 0 && hidden.count(r.xuid) == 0) ranked.push_back(&r);
     std::stable_sort(ranked.begin(), ranked.end(),
                      [](const MMR* a, const MMR* b) { return a->skill > b->skill; });
 
@@ -236,9 +237,10 @@ CsrBoardSection buildCsrBoardSection(const std::vector<StoredMatch>& matches, Ca
     return section;
 }
 
-std::vector<CsrBoardSection> buildCsrBoardSections(const std::vector<StoredMatch>& matches) {
+std::vector<CsrBoardSection> buildCsrBoardSections(
+    const std::vector<StoredMatch>& matches, const std::unordered_set<std::string>& hidden) {
     std::vector<CsrBoardSection> out;
-    for (Category c : BOARD_CATEGORIES) out.push_back(buildCsrBoardSection(matches, c));
+    for (Category c : BOARD_CATEGORIES) out.push_back(buildCsrBoardSection(matches, c, hidden));
     return out;
 }
 

@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "carnage.h"
@@ -96,3 +97,11 @@ public:
 // Open the local (file:) or remote (libsql://) backend based on the URL.
 std::unique_ptr<Db> openDb(const std::string& url,
                            const std::optional<std::string>& authToken);
+
+// Players hidden from the leaderboards: kept in the data (their games still rate
+// everyone else) but suppressed from every rendered board. Stored as a JSON array
+// of XUIDs under kv `hidden_players`, so all runners (TS + C++) filter the shared
+// board alike. Mirrors hiddenXuids/setPlayerHidden in src/db.ts.
+std::unordered_set<std::string> hiddenXuids(Db& db);
+// Hide (or, with hidden=false, un-hide) a player by XUID. True if it changed.
+bool setPlayerHidden(Db& db, const std::string& xuid, bool hidden);

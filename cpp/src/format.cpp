@@ -133,15 +133,17 @@ namespace {
 
 const char* MEDAL_EMOJI_TS2 = "\xF0\x9F\x8E\x96\xEF\xB8\x8F";  // 🎖️
 
-// One category's CSR ratings, ranked best-first, only players with games.
-std::vector<MMR> csrRowsFor(const std::vector<StoredMatch>& matches, Category cat) {
+// One category's CSR ratings, ranked best-first, only players with games, minus
+// any in `hidden` (by XUID).
+std::vector<MMR> csrRowsFor(const std::vector<StoredMatch>& matches, Category cat,
+                            const std::unordered_set<std::string>& hidden = {}) {
     std::vector<StoredMatch> ms;
     for (const auto& m : matches)
         if (boardCategory(m) == cat) ms.push_back(m);
     std::vector<MMR> all = rateCategory(ms);
     std::vector<MMR> out;
     for (const auto& r : all)
-        if (r.games > 0) out.push_back(r);
+        if (r.games > 0 && hidden.count(r.xuid) == 0) out.push_back(r);
     std::stable_sort(out.begin(), out.end(),
                      [](const MMR& a, const MMR& b) { return a.skill > b.skill; });
     return out;
@@ -149,10 +151,11 @@ std::vector<MMR> csrRowsFor(const std::vector<StoredMatch>& matches, Category ca
 
 // One CSR board section (mirrors formatCsrSection in src/discord.ts).
 std::string formatCsrSection(Category cat, const std::vector<StoredMatch>& matches,
+                             const std::unordered_set<std::string>& hidden = {},
                              size_t limit = 20) {
     std::string heading = std::string("__**") + MEDAL_EMOJI_TS2 + " " + categoryLabel(cat) + " " +
                           EMDASH + " TrueSkill 2**__";
-    std::vector<MMR> rows = csrRowsFor(matches, cat);
+    std::vector<MMR> rows = csrRowsFor(matches, cat, hidden);
     if (rows.size() > limit) rows.resize(limit);
     if (rows.empty()) return heading + "\n_No matches yet._";
 
@@ -190,15 +193,17 @@ std::string formatCsrSection(Category cat, const std::vector<StoredMatch>& match
 
 }  // namespace
 
-std::string formatCsrLeaderboard(const std::vector<StoredMatch>& matches) {
+std::string formatCsrLeaderboard(const std::vector<StoredMatch>& matches,
+                                 const std::unordered_set<std::string>& hidden) {
     std::vector<std::string> parts = {"**Halo 3 Customs " + std::string(EMDASH) +
                                       " CSR Standings**"};
-    for (Category c : BOARD_CATEGORIES) parts.push_back(formatCsrSection(c, matches));
+    for (Category c : BOARD_CATEGORIES) parts.push_back(formatCsrSection(c, matches, hidden));
     return join(parts, "\n\n");
 }
 
-std::string formatCsrLeaderboardSection(const std::vector<StoredMatch>& matches, Category cat) {
-    return formatCsrSection(cat, matches);
+std::string formatCsrLeaderboardSection(const std::vector<StoredMatch>& matches, Category cat,
+                                        const std::unordered_set<std::string>& hidden) {
+    return formatCsrSection(cat, matches, hidden);
 }
 
 std::string formatCsrLine(const CarnageReport& r,

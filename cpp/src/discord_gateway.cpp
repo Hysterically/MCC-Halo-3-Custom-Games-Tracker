@@ -764,10 +764,11 @@ private:
         try {
             if (name == "leaderboard") {
                 std::vector<StoredMatch> matches = db_.matchesChrono();
+                std::unordered_set<std::string> hidden = hiddenXuids(db_);
                 std::vector<unsigned char> png;
                 // PNG standings like the #leaderboard channel; text on failure.
                 try {
-                    png = renderCsrLeaderboardPng(buildCsrBoardSections(matches));
+                    png = renderCsrLeaderboardPng(buildCsrBoardSections(matches, hidden));
                 } catch (const std::exception& e) {
                     std::cerr << "[discord] leaderboard render failed, falling back to text: "
                               << e.what() << "\n";
@@ -781,7 +782,7 @@ private:
                     httpPostMultipart(callback, reply.dump(), "files[0]", "leaderboard.png",
                                       "image/png", png);
                 } else {
-                    replyText(callback, formatCsrLeaderboard(matches), false);
+                    replyText(callback, formatCsrLeaderboard(matches, hidden), false);
                 }
             } else if (name == "stats") {
                 std::string query;

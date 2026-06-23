@@ -2,6 +2,8 @@
 
 #include <stdexcept>
 
+#include <nlohmann/json.hpp>
+
 #include "db_sqlite.h"
 
 namespace {
@@ -61,3 +63,36 @@ std::unique_ptr<Db> openHrana(const std::string&, const std::optional<std::strin
         "remote libSQL/Turso DB (DB_URL=libsql://...) is not supported in this build yet");
 }
 #endif
+
+namespace {
+const char* kHiddenKey = "hidden_players";
+}  // namespace
+
+std::unordered_set<std::string> hiddenXuids(Db& db) {
+    std::unordered_set<std::string> out;
+    std::optional<std::string> raw = db.kvGet(kHiddenKey);
+    if (!raw) return out;
+    try {
+        nlohmann::json arr = nlohmann::json::parse(*raw);
+        if (arr.is_array())
+            for (const auto& x : arr)
+                if (x.is_string()) out.insert(x.get<std::string>());
+    } catch (...) {
+        // Malformed kv → treat as no hidden players (mirror src/db.ts).
+    }
+    return out;
+}
+
+bool setPlayerHidden(Db& db, const std::string& xuid, bool hidden) {
+    std::unordered_set<std::string> set = hiddenXuids(db);
+    bool has = set.count(xuid) != 0;
+    if (hidden ? has : !has) return false;  // no change
+    if (hidden)
+        set.insert(xuid);
+    else
+        set.erase(xuid);
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& x : set) arr.push_back(x);
+    db.kvSet(kHiddenKey, arr.dump());
+    return true;
+}
