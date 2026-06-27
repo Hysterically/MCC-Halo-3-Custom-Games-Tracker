@@ -421,6 +421,15 @@ private:
 
     void eventLoop() {
         while (!reconnect_) {
+            // Drain any buffered frames first, unconditionally. With libcurl's
+            // CONNECT_ONLY WebSocket mode, frames that arrive during the handshake
+            // (notably HELLO) can sit in curl's internal buffer without ever
+            // producing a fresh socket-readable event. A select()-gated drain would
+            // then block forever — HELLO never processed, IDENTIFY never sent,
+            // READY never arrives, footer stuck on "connecting". So poll curl every
+            // iteration; select() below only paces the loop and heartbeat timing.
+            if (!drainIncoming()) return;
+
             long long now = nowMs();
             long long waitMs = 1000;
             if (heartbeatIntervalMs_ > 0)
@@ -436,10 +445,8 @@ private:
             tv.tv_usec = static_cast<long>((waitMs % 1000) * 1000);
             int sel = select(0, &rfds, nullptr, nullptr, &tv);
             if (sel == SOCKET_ERROR) return;
-
-            if (sel > 0 && FD_ISSET(sock, &rfds)) {
-                if (!drainIncoming()) return;
-            }
+            // Readable frames are picked up by the unconditional drain at the top
+            // of the next iteration (select here only bounds the wait).
 
             // Heartbeat timing.
             if (heartbeatIntervalMs_ > 0 && nowMs() >= nextHeartbeatMs_) {
