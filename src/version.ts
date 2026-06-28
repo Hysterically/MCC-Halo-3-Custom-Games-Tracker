@@ -8,4 +8,4 @@
  * re-renders any post whose stamp is behind (see heal.ts). Mirror this number
  * in the C++ port (cpp/src/version.h).
  */
-export const RESULTS_FMT_VERSION = 2;
+export const RESULTS_FMT_VERSION = 3;
