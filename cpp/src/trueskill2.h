@@ -13,6 +13,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "csr.h"
@@ -42,9 +43,10 @@ std::vector<MMR> rateCategory(const std::vector<StoredMatch>& matches);
 
 // A player's post-match CSR and the change (in CSR points) one match produced.
 struct CsrChange {
-    double skill = 0;  // conservative skill after this match
-    Csr csr;           // CSR display after this match
-    int delta = 0;     // change in CSR value this match produced (post - pre)
+    double skill = 0;       // conservative skill after this match
+    Csr csr;                // CSR display after this match
+    int delta = 0;          // change in CSR value this match produced (post - pre)
+    bool champion = false;  // a Champion as of this match (top 3 on board, cleared the floor)
 };
 
 // Per-player post-match CSR + change (xuid -> CsrChange) produced by one specific
@@ -52,7 +54,8 @@ struct CsrChange {
 // Empty for off-format matches or if the match isn't in `matches`. Mirrors
 // matchCsrChanges in src/trueskill2.ts.
 std::map<std::string, CsrChange> matchCsrChanges(const std::vector<StoredMatch>& matches,
-                                                 const std::string& matchId);
+                                                 const std::string& matchId,
+                                                 const std::unordered_set<std::string>& hidden = {});
 
 // Pre-match win probability + average CSR for one team of a rated 2-team match.
 struct TeamWinChance {

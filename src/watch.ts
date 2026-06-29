@@ -26,6 +26,7 @@ import {
   matchesChrono,
   setMatchResultsMsg,
   setMatchResultsFmt,
+  hiddenXuids,
 } from "./db.ts";
 import { matchCsrChanges, matchWinChances, type CsrChange, type MatchWinChances } from "./trueskill2.ts";
 import { parseCarnageFile, type CarnageReport } from "./parseCarnage.ts";
@@ -187,10 +188,11 @@ async function onFile(path: string): Promise<void> {
   // history, so they match exactly what the leaderboard will apply.
   // Best effort: a DB hiccup just posts the result without the ratings.
   const history = await matchesChrono(db);
+  const hidden = await hiddenXuids(db);
   let csrChanges: Map<string, CsrChange> | null = null;
   let winChances: MatchWinChances | null = null;
   try {
-    csrChanges = matchCsrChanges(history, report.matchId);
+    csrChanges = matchCsrChanges(history, report.matchId, hidden);
     winChances = matchWinChances(history, report.matchId);
   } catch (e) {
     console.error("[ts2] CSR change computation failed:", (e as Error).message);

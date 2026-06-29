@@ -569,10 +569,10 @@ std::vector<std::uint8_t> renderCarnageCsrPng(const CarnageReport& r,
             std::wstring mainText = widen(std::to_string(ch.csr.value));
             float mainW = measureW(g, mainText, rowFont, fmt);
             float deltaW = measureW(g, deltaText, rowFont, fmt);
-            // A player who has cleared the Champion floor wears the Champion
-            // insignia instead of their tier emblem (mirrors src/renderCarnage.ts).
+            // A Champion (top 3 on the board who has cleared the floor — flagged by
+            // matchCsrChanges) wears the Champion insignia instead of their tier emblem.
             const std::string emblemKey =
-                ch.csr.value >= CHAMPION_THRESHOLD ? "champion" : ch.csr.emblem;
+                ch.champion ? "champion" : ch.csr.emblem;
             Bitmap* img = csrEmblem(emblemKey);
             float ew = (img && img->GetHeight()) ? static_cast<float>(img->GetWidth()) /
                                                        static_cast<float>(img->GetHeight()) *

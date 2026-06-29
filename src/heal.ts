@@ -35,6 +35,7 @@ import {
   resultsRestyleTargets,
   recordedAtByMatch,
   kvGet,
+  hiddenXuids,
 } from "./db.ts";
 import { matchCsrChanges, matchWinChances, type CsrChange } from "./trueskill2.ts";
 import { renderCarnageCsrPng } from "./renderCarnage.ts";
@@ -287,6 +288,7 @@ export async function healStaleResults(
   if (!webhookUrl) return { adopted: 0, restyled: 0, gone: 0 };
 
   const chrono = await matchesChrono(db);
+  const hidden = await hiddenXuids(db);
   const byId = new Map(chrono.map((m) => [m.matchId, m]));
 
   const adopted = await adoptOrphanPosts(db, chrono, log);
@@ -302,7 +304,7 @@ export async function healStaleResults(
     const match = byId.get(matchId);
     if (!match) continue; // match deleted between query and now
     const changes: Map<string, CsrChange> | undefined =
-      matchCsrChanges(chrono, matchId) ?? undefined;
+      matchCsrChanges(chrono, matchId, hidden) ?? undefined;
     const win = matchWinChances(chrono, matchId) ?? undefined;
     try {
       const report = toReport(match);
@@ -339,9 +341,10 @@ export async function restyleResultPost(
   const webhookUrl = config.discordResultsWebhookUrl;
   if (!webhookUrl) return "skipped";
   const chrono = await matchesChrono(db);
+  const hidden = await hiddenXuids(db);
   const match = chrono.find((m) => m.matchId === matchId);
   if (!match) return "skipped";
-  const changes: Map<string, CsrChange> | undefined = matchCsrChanges(chrono, matchId) ?? undefined;
+  const changes: Map<string, CsrChange> | undefined = matchCsrChanges(chrono, matchId, hidden) ?? undefined;
   const win = matchWinChances(chrono, matchId) ?? undefined;
   const report = toReport(match);
   const png = await renderCarnageCsrPng(report, changes, win);
