@@ -414,7 +414,7 @@ async function postAndReturnId(
 }
 
 /** DELETE an existing message. Swallows 404 (already gone) and never throws. */
-async function deleteMessage(url: string, messageId: string): Promise<void> {
+export async function deleteMessage(url: string, messageId: string): Promise<void> {
   try {
     await fetch(`${url}/messages/${messageId}`, { method: "DELETE" });
   } catch {
