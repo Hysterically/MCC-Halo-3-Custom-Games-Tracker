@@ -9,3 +9,12 @@ carnage.png
 /friends.env
 /backups/
 /tmp-release.json
+
+# Local analysis / research sandboxes, generated previews, and the paper —
+# kept on disk but never committed (not part of the build or the shipped exe).
+/TrueSkill 2 + OBJ/
+/trueskill 1/
+/trueskill 2/
+/trueskill2.pdf
+/preview-csr-history/
+/src/whittaker.ts
