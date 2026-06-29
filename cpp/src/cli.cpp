@@ -939,7 +939,7 @@ int cmdWatch() {
         std::optional<MatchWinChances> winChances;
         try {
             std::vector<StoredMatch> chrono = db->matchesChrono();
-            csrChanges = matchCsrChanges(chrono, report->matchId);
+            csrChanges = matchCsrChanges(chrono, report->matchId, hiddenXuids(*db));
             winChances = matchWinChances(chrono, report->matchId);
         } catch (const std::exception& e) {
             term::statusBar().logErr(std::string("[ts2] CSR change computation failed: ") +

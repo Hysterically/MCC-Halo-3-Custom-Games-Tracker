@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "category.h"
 
@@ -579,7 +580,8 @@ std::vector<MMR> rateCategory(const std::vector<StoredMatch>& matches) {
 }
 
 std::map<std::string, CsrChange> matchCsrChanges(const std::vector<StoredMatch>& matches,
-                                                 const std::string& matchId) {
+                                                 const std::string& matchId,
+                                                 const std::unordered_set<std::string>& hidden) {
     std::map<std::string, CsrChange> changes;
 
     size_t idx = matches.size();
@@ -598,9 +600,23 @@ std::map<std::string, CsrChange> matchCsrChanges(const std::vector<StoredMatch>&
         if (boardCategory(matches[i]) == cat) hist.push_back(matches[i]);
     std::vector<StoredMatch> prior(hist.begin(), hist.end() - 1);
 
+    std::vector<MMR> afterRows = rateCategory(hist);
     std::unordered_map<std::string, double> before, after;
     for (const MMR& r : rateCategory(prior)) before[r.xuid] = r.skill;
-    for (const MMR& r : rateCategory(hist)) after[r.xuid] = r.skill;
+    for (const MMR& r : afterRows) after[r.xuid] = r.skill;
+
+    // Champions = up to the top 3 of this board (by skill, hidden players
+    // excluded) who have also cleared the Champion floor — the same rule the
+    // leaderboard applies, evaluated as of THIS match.
+    std::vector<const MMR*> ranked;
+    for (const MMR& r : afterRows)
+        if (r.games > 0 && hidden.find(r.xuid) == hidden.end()) ranked.push_back(&r);
+    std::sort(ranked.begin(), ranked.end(),
+              [](const MMR* a, const MMR* b) { return a->skill > b->skill; });
+    std::unordered_set<std::string> champions;
+    for (size_t i = 0; i < ranked.size() && i < 3; ++i)
+        if (csrFromSkill(ranked[i]->skill).value >= CHAMPION_THRESHOLD)
+            champions.insert(ranked[i]->xuid);
 
     for (const auto& p : match.players) {
         auto a = after.find(p.xuid);
@@ -609,7 +625,8 @@ std::map<std::string, CsrChange> matchCsrChanges(const std::vector<StoredMatch>&
         double bSkill = b != before.end() ? b->second : TS2_SEED_SKILL;
         Csr csrAfter = csrFromSkill(a->second);
         Csr csrBefore = csrFromSkill(bSkill);
-        changes[p.xuid] = {a->second, csrAfter, csrAfter.value - csrBefore.value};
+        changes[p.xuid] = {a->second, csrAfter, csrAfter.value - csrBefore.value,
+                           champions.find(p.xuid) != champions.end()};
     }
     return changes;
 }

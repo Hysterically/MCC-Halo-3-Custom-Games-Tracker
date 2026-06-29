@@ -277,6 +277,7 @@ HealStats healStaleResults(Db& db, bool force) {
     std::vector<RestyleTarget> targets = db.resultsRestyleTargets(RESULTS_FMT_VERSION, force);
     if (targets.empty()) return stats;
     std::vector<std::string> editUrls = resultsWebhookUrls(db);
+    std::unordered_set<std::string> hidden = hiddenXuids(db);
 
     log("re-styling " + std::to_string(targets.size()) + " post" +
         (targets.size() == 1 ? "" : "s") + " to format v" + std::to_string(RESULTS_FMT_VERSION) +
@@ -284,7 +285,7 @@ HealStats healStaleResults(Db& db, bool force) {
     for (const auto& t : targets) {
         auto it = byId.find(t.matchId);
         if (it == byId.end()) continue;  // match deleted between query and now
-        std::map<std::string, CsrChange> changes = matchCsrChanges(chrono, t.matchId);
+        std::map<std::string, CsrChange> changes = matchCsrChanges(chrono, t.matchId, hidden);
         std::optional<MatchWinChances> win = matchWinChances(chrono, t.matchId);
         try {
             CarnageReport report = fromStoredMatch(*it->second);
@@ -314,6 +315,7 @@ std::string restyleResultPost(Db& db, const std::string& matchId, const std::str
     if (!webhook) return "skipped";
 
     std::vector<StoredMatch> chrono = db.matchesChrono();
+    std::unordered_set<std::string> hidden = hiddenXuids(db);
     const StoredMatch* match = nullptr;
     for (const auto& m : chrono)
         if (m.matchId == matchId) {
@@ -322,7 +324,7 @@ std::string restyleResultPost(Db& db, const std::string& matchId, const std::str
         }
     if (!match) return "skipped";
 
-    std::map<std::string, CsrChange> changes = matchCsrChanges(chrono, matchId);
+    std::map<std::string, CsrChange> changes = matchCsrChanges(chrono, matchId, hidden);
     std::optional<MatchWinChances> win = matchWinChances(chrono, matchId);
     CarnageReport report = fromStoredMatch(*match);
     std::vector<std::uint8_t> png =

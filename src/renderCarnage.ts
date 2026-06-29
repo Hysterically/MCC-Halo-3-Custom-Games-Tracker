@@ -15,7 +15,6 @@ import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import type { EloChange } from "./elo.ts";
 import { type CsrChange, type MatchWinChances } from "./trueskill2.ts";
 import { csrEmblems } from "./csrEmblems.ts";
-import { CHAMPION_THRESHOLD } from "./csr.ts";
 import { displayName } from "./aliases.ts";
 import { FONT, FONT_BOLD } from "./fonts.ts";
 
@@ -354,9 +353,9 @@ export async function renderCarnageCsrPng(
     const mainText = String(ch.csr.value);
     const mainW = ctx.measureText(mainText).width;
     const deltaW = ctx.measureText(deltaText).width;
-    // A player who has cleared the Champion floor wears the Champion insignia
-    // instead of their tier emblem (the leaderboard does the same for its top 3).
-    const emblemKey = ch.csr.value >= CHAMPION_THRESHOLD ? "champion" : ch.csr.emblem;
+    // A Champion (top 3 on the board who has cleared the floor — flagged by
+    // matchCsrChanges) wears the Champion insignia instead of their tier emblem.
+    const emblemKey = ch.champion ? "champion" : ch.csr.emblem;
     const img = emblems[emblemKey];
     const ew = img ? (img.width / img.height) * CSR_EMBLEM_H : 0;
     const groupW = ew + (img ? gapE : 0) + mainW + gapD + deltaW;

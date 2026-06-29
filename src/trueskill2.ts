@@ -18,7 +18,7 @@
 
 import type { StoredMatch } from "./db.ts";
 import { boardCategory } from "./category.ts";
-import { csrFromSkill, type Csr } from "./csr.ts";
+import { csrFromSkill, CHAMPION_THRESHOLD, type Csr } from "./csr.ts";
 
 // ---------------------------------------------------------------------------
 // TrueSkill parameters. The skill-class constants (mu0, sigma0, beta, draw)
@@ -550,6 +550,12 @@ export interface CsrChange {
   csr: Csr;
   /** Change in CSR value this match produced (post - pre). */
   delta: number;
+  /**
+   * True if this player is a Champion as of this match: up to the top 3 of their
+   * board (by skill, hidden players excluded) who have also cleared the Champion
+   * floor (CHAMPION_THRESHOLD) — the same rule the leaderboard applies.
+   */
+  champion?: boolean;
 }
 
 /**
@@ -562,6 +568,7 @@ export interface CsrChange {
 export function matchCsrChanges(
   matches: StoredMatch[],
   matchId: string,
+  hidden: ReadonlySet<string> = new Set(),
 ): Map<string, CsrChange> | null {
   const idx = matches.findIndex((m) => m.matchId === matchId);
   if (idx === -1) return null;
@@ -571,7 +578,20 @@ export function matchCsrChanges(
 
   const hist = matches.slice(0, idx + 1).filter((m) => boardCategory(m) === cat);
   const before = new Map(rateCategory(hist.slice(0, -1)).map((r) => [r.xuid, r.skill]));
-  const after = new Map(rateCategory(hist).map((r) => [r.xuid, r.skill]));
+  const afterRows = rateCategory(hist);
+  const after = new Map(afterRows.map((r) => [r.xuid, r.skill]));
+
+  // Champions = up to the top 3 of this board (ranked by skill, hidden players
+  // excluded) who have also cleared the Champion floor — the same rule the
+  // leaderboard applies (renderCsrLeaderboard.isChampion), evaluated as of THIS
+  // match so each post is a faithful snapshot.
+  const champions = new Set<string>();
+  const ranked = afterRows
+    .filter((r) => r.games > 0 && !hidden.has(r.xuid))
+    .sort((a, b) => b.skill - a.skill);
+  for (let i = 0; i < Math.min(3, ranked.length); i++) {
+    if (csrFromSkill(ranked[i].skill).value >= CHAMPION_THRESHOLD) champions.add(ranked[i].xuid);
+  }
 
   const changes = new Map<string, CsrChange>();
   for (const p of match.players) {
@@ -580,7 +600,12 @@ export function matchCsrChanges(
     const b = before.get(p.xuid) ?? SEED_SKILL;
     const csrAfter = csrFromSkill(a);
     const csrBefore = csrFromSkill(b);
-    changes.set(p.xuid, { skill: a, csr: csrAfter, delta: csrAfter.value - csrBefore.value });
+    changes.set(p.xuid, {
+      skill: a,
+      csr: csrAfter,
+      delta: csrAfter.value - csrBefore.value,
+      champion: champions.has(p.xuid),
+    });
   }
   return changes;
 }
