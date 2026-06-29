@@ -30,6 +30,13 @@ Quick start - setting up your own, separate leaderboard
 
 To change your Discord settings later, double-click  Setup.bat
 
+Updating to a new version
+-------------------------
+Easiest way: download the latest .zip and extract it over your existing
+folder, keeping your .env (your settings). Then double-click Start.bat. The
+download is always the newest build and works as-is - nothing to reinstall and
+no settings to redo. Your ranks rebuild from match history automatically.
+
 Where your matches are saved
 ----------------------------
 If your .env points at the group's shared online database (DB_URL=...), every
