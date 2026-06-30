@@ -38,7 +38,7 @@ struct CsrBoardSection {
 CsrBoardSection buildCsrBoardSection(const std::vector<StoredMatch>& matches, Category cat,
                                      const std::unordered_set<std::string>& hidden = {});
 
-// Per-category CSR tables in display order (2v2 / 4v4 / FFA), for the combined
+// Per-category CSR tables in display order (just 4v4 now), for the combined
 // /leaderboard PNG. Mirrors buildCsrBoardSections in src/discord.ts.
 std::vector<CsrBoardSection> buildCsrBoardSections(
     const std::vector<StoredMatch>& matches,

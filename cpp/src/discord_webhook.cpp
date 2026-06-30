@@ -146,6 +146,22 @@ void retireCombinedLeaderboard(const std::string& url, Db& db) {
     }
 }
 
+// Retire the per-category boards that no longer exist (2v2 / FFA). One-time
+// cleanup mirroring retireCombinedLeaderboard: delete each retired board's
+// message and drop its lb_msg:<webhook>:<cat> slot so a stale 2v2 / FFA board
+// doesn't linger above the live 4v4 one. Mirrors retireDroppedBoards in
+// src/discord.ts.
+void retireDroppedBoards(const std::string& url, Db& db) {
+    std::string base = webhookId(url);
+    for (Category cat : RETIRED_BOARD_CATEGORIES) {
+        std::string key = "lb_msg:" + base + ":" + categoryKey(cat);
+        if (auto old = db.kvGet(key)) {
+            deleteMessage(url, *old);
+            db.kvDelete(key);
+        }
+    }
+}
+
 }  // namespace
 
 void postWebhook(const std::string& url, const std::string& content) {
@@ -187,8 +203,9 @@ std::string postMatchResult(const std::optional<std::string>& url, const Carnage
 void upsertLeaderboard(const std::optional<std::string>& url, Db& db, EloOptions elo) {
     if (!url) return;
     std::vector<StoredMatch> matches = db.matchesChrono();
-    // Drop the old single combined message if this webhook still tracks one.
+    // Drop the old single combined message + the retired 2v2 / FFA boards.
     retireCombinedLeaderboard(*url, db);
+    retireDroppedBoards(*url, db);
 
     std::string base = webhookId(*url);
     for (Category cat : LEADERBOARD_POST_ORDER) {
@@ -263,16 +280,17 @@ std::string postCsrMatchResultWithControls(Db& db, const CarnageReport& report,
     return postCsrMatchResult(url, report, csrChanges, win, nullptr);
 }
 
-// Refresh the live CSR leaderboard as THREE persistent messages (one per board
-// category), reusing the lb_msg:<webhook>:<cat> slots the ELO board used so CSR
-// takes over the existing #leaderboard messages in place. Posted 2v2 -> FFA ->
-// 4v4 so the 4v4 board lands at the bottom of the channel. Mirrors
+// Refresh the live CSR leaderboard as a persistent message per board category —
+// now just the 4v4 board — reusing the lb_msg:<webhook>:<cat> slot the ELO board
+// used so CSR takes over the existing #leaderboard message in place. Mirrors
 // upsertCsrLeaderboard in src/discord.ts.
 void upsertCsrLeaderboard(const std::optional<std::string>& url, Db& db) {
     if (!url) return;
     std::vector<StoredMatch> matches = db.matchesChrono();
     std::unordered_set<std::string> hidden = hiddenXuids(db);
+    // Drop the old single combined message + the retired 2v2 / FFA boards.
     retireCombinedLeaderboard(*url, db);
+    retireDroppedBoards(*url, db);
 
     std::string base = webhookId(*url);
     for (Category cat : LEADERBOARD_POST_ORDER) {

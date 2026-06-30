@@ -22,7 +22,7 @@ struct BoardSection {
 BoardSection buildBoardSection(const std::vector<StoredMatch>& matches, EloOptions elo,
                                Category cat);
 
-// Per-category rating tables in display order (2v2 / 4v4 / FFA), as the PNG
+// Per-category rating tables in display order (just 4v4 now), as the PNG
 // renderer wants them. Mirrors buildBoardSections in src/discord.ts.
 std::vector<BoardSection> buildBoardSections(const std::vector<StoredMatch>& matches,
                                              EloOptions elo);

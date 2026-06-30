@@ -523,7 +523,7 @@ std::vector<BoardSection> sampleBoardSections() {
         rt.deaths = 100;
         ratings.push_back(rt);
     }
-    return {{"2V2 LEADERBOARD", {}}, {"4V4 LEADERBOARD", ratings}, {"FFA LEADERBOARD", {}}};
+    return {{"4V4 LEADERBOARD", ratings}};
 }
 
 // Sample CSR standings (a 4v4 board across a spread of tiers) so the leaderboard
@@ -557,7 +557,7 @@ std::vector<CsrBoardSection> sampleCsrBoardSections() {
         rt.deaths = 100;
         csrRows.push_back(rt);
     }
-    return {{"2V2 LEADERBOARD", {}}, {"4V4 LEADERBOARD", csrRows}, {"FFA LEADERBOARD", {}}};
+    return {{"4V4 LEADERBOARD", csrRows}};
 }
 
 int cmdRenderBoard(const std::vector<std::string>& args) {
@@ -831,12 +831,18 @@ int cmdHidePlayer(const std::vector<std::string>& args) {
 }
 
 int cmdWatch() {
+    // The remote DB lives in AWS and may be cold; opening it + counting matches
+    // is a couple of network round-trips. Print one line first so the window
+    // isn't blank while we wait — the banner (which needs the count) follows.
+    term::init();
+    std::cout << term::dim("Connecting to the database\xE2\x80\xA6") << "\n";
+    std::cout.flush();
+
     auto db = openDb(config().dbUrl, config().dbAuthToken);
     long long before = db->matchCount();
 
     // Live dashboard: a boxed config summary up top, then a self-updating footer.
     // The banner reports which channels/bot are active, so no per-channel preamble.
-    term::init();
     term::statusBar().start();
     term::banner(
         "Halo 3 Customs Tracker",

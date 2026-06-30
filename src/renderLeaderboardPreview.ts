@@ -37,11 +37,7 @@ const ratings: Rating[] = SAMPLE.map(([gamertag, rating, wins, losses, draws, kd
   deaths: 100,
 }));
 
-const sections: BoardSection[] = [
-  { title: "2V2 LEADERBOARD", ratings: [] },
-  { title: "4V4 LEADERBOARD", ratings },
-  { title: "FFA LEADERBOARD", ratings: [] },
-];
+const sections: BoardSection[] = [{ title: "4V4 LEADERBOARD", ratings }];
 
 await writeFile("preview-leaderboard.png", await renderLeaderboardPng(sections));
 console.log("wrote preview-leaderboard.png");

@@ -19,15 +19,25 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   other: "—",
 };
 
-/** Categories that get a leaderboard section, in display order. */
-export const BOARD_CATEGORIES: Category[] = ["2v2", "4v4", "ffa"];
+/**
+ * Categories that get a leaderboard section, in display order. 4v4 is the only
+ * ranked board: the 2v2 and FFA boards were retired. 2v2 / FFA games are still
+ * recorded and posted to #game-results (categorize() still tags them) — they
+ * just no longer contribute to a leaderboard, same as "other".
+ */
+export const BOARD_CATEGORIES: Category[] = ["4v4"];
+
+/** Order the per-category leaderboard messages are posted to Discord. */
+export const LEADERBOARD_POST_ORDER: Category[] = ["4v4"];
 
 /**
- * Order the per-category leaderboard messages are posted to Discord, top to
- * bottom. 4v4 goes LAST so it lands at the bottom of the channel — the newest /
- * most in-focus message. Same set as {@link BOARD_CATEGORIES}, reordered.
+ * Boards that USED to exist and whose Discord messages must be cleaned up. When
+ * the 2v2 / FFA leaderboards were dropped, their `lb_msg:<webhook>:<cat>`
+ * messages were left frozen in the channel; the upsert path deletes them (and
+ * drops the kv slots) so the stale boards don't linger. Keep these out of
+ * {@link BOARD_CATEGORIES} — they exist only to be retired.
  */
-export const LEADERBOARD_POST_ORDER: Category[] = ["2v2", "ffa", "4v4"];
+export const RETIRED_BOARD_CATEGORIES: Category[] = ["2v2", "ffa"];
 
 /**
  * A game shorter than this (in seconds) didn't really happen — it was set up
