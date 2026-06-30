@@ -51,6 +51,7 @@ import {
   CATEGORY_LABEL,
   BOARD_CATEGORIES,
   LEADERBOARD_POST_ORDER,
+  RETIRED_BOARD_CATEGORIES,
   type Category,
 } from "./category.ts";
 import { displayName } from "./aliases.ts";
@@ -181,9 +182,9 @@ function resolvePlayer(
 }
 
 /**
- * Per-player stats card: ELO, rank, W-L-D, Win% and K/D in each board category
- * (2v2 / 4v4 / FFA), plus an overall line. Categories the player hasn't played
- * are omitted. `query` is a Gamertag or display alias (partial accepted).
+ * Per-player stats card: ELO, rank, W-L-D, Win% and K/D for the 4v4 board, plus
+ * an overall line. Omitted if the player hasn't played 4v4. `query` is a
+ * Gamertag or display alias (partial accepted).
  */
 export function formatPlayerStats(
   matches: StoredMatch[],
@@ -225,7 +226,7 @@ export function formatPlayerStats(
   }
 
   if (!rows.length) {
-    return `📊 **${who.label}** hasn't played any ranked (2v2 / 4v4 / FFA) matches yet.`;
+    return `📊 **${who.label}** hasn't played any ranked 4v4 matches yet.`;
   }
 
   const w = {
@@ -549,14 +550,30 @@ async function retireCombinedLeaderboard(url: string, db: DB): Promise<void> {
 }
 
 /**
- * Refresh the live leaderboard as THREE persistent messages — one per board
- * category, each its own standings PNG (text section as fallback) edited in
- * place. They're posted 2v2 → FFA → 4v4 ({@link LEADERBOARD_POST_ORDER}) so the
- * 4v4 board lands at the bottom of the channel: the newest / most in-focus one.
+ * Retire the per-category boards that no longer exist (2v2 / FFA). One-time
+ * cleanup mirroring {@link retireCombinedLeaderboard}: delete each retired
+ * board's message and drop its `lb_msg:<webhook>:<cat>` slot so a stale 2v2 /
+ * FFA board doesn't linger above the live 4v4 one.
+ */
+async function retireDroppedBoards(url: string, db: DB): Promise<void> {
+  const base = webhookId(url);
+  for (const cat of RETIRED_BOARD_CATEGORIES) {
+    const key = `lb_msg:${base}:${cat}`;
+    const old = await kvGet(db, key);
+    if (!old) continue;
+    await deleteMessage(url, old);
+    await kvDelete(db, key);
+  }
+}
+
+/**
+ * Refresh the live leaderboard as a persistent message per board category — now
+ * just the 4v4 board ({@link LEADERBOARD_POST_ORDER}), each its own standings
+ * PNG (text section as fallback) edited in place.
  *
  * Each message's id is held in the shared DB under `lb_msg:<webhook>:<cat>`, so
- * every instance edits the SAME three messages instead of each posting its own.
- * See {@link upsertOneMessage} for the per-message race handling.
+ * every instance edits the SAME message instead of each posting its own. See
+ * {@link upsertOneMessage} for the per-message race handling.
  */
 export async function upsertLeaderboard(
   url: string | undefined,
@@ -565,8 +582,9 @@ export async function upsertLeaderboard(
 ): Promise<void> {
   if (!url) return;
   const matches = await matchesChrono(db);
-  // Drop the old single combined message if this webhook still tracks one.
+  // Drop the old single combined message + the retired 2v2 / FFA boards.
   await retireCombinedLeaderboard(url, db);
+  await retireDroppedBoards(url, db);
 
   const byCat = groupByCategory(matches);
   const base = webhookId(url);
@@ -710,17 +728,18 @@ function formatCsrSection(
 }
 
 /**
- * Refresh the live TrueSkill 2 leaderboard as THREE persistent messages —
- * one per board category — in #ts2-leaderboard, each its own CSR standings PNG
- * (text section as fallback) edited in place. Same per-message race handling and
- * 2v2 → FFA → 4v4 post order as the ELO board ({@link upsertLeaderboard}).
+ * Refresh the live TrueSkill 2 leaderboard as a persistent message per board
+ * category — now just the 4v4 board — in #ts2-leaderboard, its own CSR standings
+ * PNG (text section as fallback) edited in place. Same per-message race handling
+ * as the ELO board ({@link upsertLeaderboard}).
  */
 export async function upsertCsrLeaderboard(url: string | undefined, db: DB): Promise<void> {
   if (!url) return;
   const matches = await matchesChrono(db);
   const hidden = await hiddenXuids(db);
-  // Drop the old single combined message if this webhook still tracks one.
+  // Drop the old single combined message + the retired 2v2 / FFA boards.
   await retireCombinedLeaderboard(url, db);
+  await retireDroppedBoards(url, db);
 
   const byCat = groupByCategory(matches);
   const base = webhookId(url);
@@ -840,7 +859,7 @@ export function formatCsrPlayerStats(matches: StoredMatch[], query: string): str
   const res = computeCsrPlayerStats(matches, query);
   if (res.kind === "none") return `🔍 No player matching **${query}** found.`;
   if (res.kind === "unranked")
-    return `📊 **${res.label}** hasn't played any ranked (2v2 / 4v4 / FFA) matches yet.`;
+    return `📊 **${res.label}** hasn't played any ranked 4v4 matches yet.`;
   const { label: who_label, rows, totals } = res;
   const { games, wins, losses, draws, kills, deaths } = totals;
 
@@ -882,7 +901,7 @@ export function buildCsrPlayerStatsEmbed(
   if (res.kind === "none") return { content: `🔍 No player matching **${query}** found.` };
   if (res.kind === "unranked")
     return {
-      content: `📊 **${res.label}** hasn't played any ranked (2v2 / 4v4 / FFA) matches yet.`,
+      content: `📊 **${res.label}** hasn't played any ranked 4v4 matches yet.`,
     };
   const { label, rows, totals } = res;
   const fields = rows.map((r) => ({
@@ -911,7 +930,7 @@ function leaderboardEmbed(): APIEmbed {
     title: "🏆 Halo 3 Customs — CSR Standings",
     color: EMBED.neutral,
     image: { url: "attachment://leaderboard.png" },
-    footer: { text: "2v2 · FFA · 4v4 — TrueSkill 2" },
+    footer: { text: "4v4 — TrueSkill 2" },
     timestamp: new Date().toISOString(),
   };
 }

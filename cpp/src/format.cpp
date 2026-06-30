@@ -494,7 +494,7 @@ nlohmann::json csrPlayerStatsEmbed(const std::vector<StoredMatch>& matches,
     if (res.kind == CsrStatsResult::Unranked)
         return json{{"content",
                      std::string(CHART) + " **" + res.label +
-                         "** hasn't played any ranked (2v2 / 4v4 / FFA) matches yet."}};
+                         "** hasn't played any ranked 4v4 matches yet."}};
 
     json fields = json::array();
     for (const auto& r : res.rows)
@@ -521,8 +521,7 @@ nlohmann::json leaderboardEmbed() {
     return json{{"title", std::string(TROPHY) + " Halo 3 Customs " + EMDASH + " CSR Standings"},
                 {"color", Embed::NEUTRAL},
                 {"image", {{"url", "attachment://leaderboard.png"}}},
-                {"footer", {{"text", std::string("2v2 ") + MIDDOT + " FFA " + MIDDOT +
-                                         " 4v4 " + EMDASH + " TrueSkill 2"}}},
+                {"footer", {{"text", std::string("4v4 ") + EMDASH + " TrueSkill 2"}}},
                 {"timestamp", isoTimestamp(nowMsWall())}};
 }
 

@@ -4,7 +4,7 @@
  * light-blue column headers and row treatment, so the #leaderboard post and
  * the #game-results posts read as a set.
  *
- * One section per board category (2v2 / 4v4 / FFA). The 🥇🥈🥉 podium medals
+ * One section per board category (just 4v4 now). The 🥇🥈🥉 podium medals
  * (baked PNGs — see genMedalAssets.ts) float on the background gutter left of
  * the table, mirrored by equal empty space on the right; the rank cell stays
  * neutral like the carnage screen's ELO cell.

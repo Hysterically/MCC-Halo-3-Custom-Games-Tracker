@@ -35,15 +35,24 @@ inline const char* categoryKey(Category c) {
     }
 }
 
-// Categories that get a leaderboard section, in display order.
-inline constexpr std::array<Category, 3> BOARD_CATEGORIES = {
-    Category::TwoV2, Category::FourV4, Category::FFA};
+// Categories that get a leaderboard section, in display order. 4v4 is the only
+// ranked board: the 2v2 and FFA boards were retired. 2v2 / FFA games are still
+// recorded and posted to #game-results (categorize() still tags them) — they
+// just no longer contribute to a leaderboard, same as Other. Mirrors
+// BOARD_CATEGORIES in src/category.ts.
+inline constexpr std::array<Category, 1> BOARD_CATEGORIES = {Category::FourV4};
 
-// Order the per-category leaderboard messages are posted to Discord, top to
-// bottom. 4v4 goes LAST so it lands at the bottom of the channel — the newest /
-// most in-focus message. Mirrors LEADERBOARD_POST_ORDER in src/category.ts.
-inline constexpr std::array<Category, 3> LEADERBOARD_POST_ORDER = {
-    Category::TwoV2, Category::FFA, Category::FourV4};
+// Order the per-category leaderboard messages are posted to Discord. Mirrors
+// LEADERBOARD_POST_ORDER in src/category.ts.
+inline constexpr std::array<Category, 1> LEADERBOARD_POST_ORDER = {Category::FourV4};
+
+// Boards that USED to exist and whose Discord messages must be cleaned up. When
+// the 2v2 / FFA leaderboards were dropped, their lb_msg:<webhook>:<cat> messages
+// were left frozen in the channel; the upsert path deletes them (and drops the
+// kv slots) so the stale boards don't linger. Mirrors RETIRED_BOARD_CATEGORIES
+// in src/category.ts.
+inline constexpr std::array<Category, 2> RETIRED_BOARD_CATEGORIES = {Category::TwoV2,
+                                                                     Category::FFA};
 
 // A game shorter than this (seconds) didn't really happen — it was ended/aborted
 // before a result (e.g. a 0-0 no-contest that lands as a tie). Such games are
