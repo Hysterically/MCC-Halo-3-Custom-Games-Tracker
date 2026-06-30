@@ -43,6 +43,10 @@ import { csrText } from "./csr.ts";
 const isCarnage = (f: string): boolean =>
   /carnage/i.test(f) && extname(f).toLowerCase() === ".xml";
 
+// The remote DB lives in AWS and may be cold; opening it + counting matches is
+// a couple of network round-trips. Print one line first so the window isn't
+// blank while we wait — the banner (which needs the count) follows.
+console.log(c.dim("Connecting to the database…"));
 const db = await openDb(config.dbUrl, config.dbAuthToken);
 const startCount = await matchCount(db);
 

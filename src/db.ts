@@ -102,7 +102,10 @@ export async function openDb(url: string, authToken?: string): Promise<DB> {
          recorded_at     INTEGER NOT NULL,
          map_name        TEXT,
          map_variant     TEXT,
-         duration_seconds INTEGER
+         duration_seconds INTEGER,
+         results_msg_id  TEXT,
+         results_fmt     INTEGER,
+         excluded        INTEGER NOT NULL DEFAULT 0
        )`,
       `CREATE TABLE IF NOT EXISTS match_players (
          match_id  TEXT NOT NULL REFERENCES matches(match_id) ON DELETE CASCADE,
@@ -125,23 +128,30 @@ export async function openDb(url: string, authToken?: string): Promise<DB> {
     "write",
   );
 
-  // Migrate pre-map databases in place; "duplicate column" just means done.
-  for (const col of ["map_name", "map_variant"]) {
-    await db.execute(`ALTER TABLE matches ADD COLUMN ${col} TEXT`).catch(() => {});
+  // Migrate older databases in place. Fresh DBs already have every column from
+  // the CREATE above, so we read the current columns once and only ALTER what's
+  // missing — an already-current DB then costs a single round-trip here instead
+  // of firing six ALTERs (each its own remote round-trip) that all no-op.
+  //   results_msg_id   — Discord #game-results message id, captured at post time
+  //                      so a match can be voided by referencing its post.
+  //   results_fmt      — layout version of that post (RESULTS_FMT_VERSION at post
+  //                      time); NULL = older build / never stamped → re-stylable.
+  //   excluded         — manually-voided flag: 1 = off every leaderboard while
+  //                      the match + its post are kept. 0 / NULL = counts.
+  const have = new Set(
+    (await db.execute("PRAGMA table_info(matches)")).rows.map((r) => String(r.name)),
+  );
+  const migrations: [string, string][] = [
+    ["map_name", "ALTER TABLE matches ADD COLUMN map_name TEXT"],
+    ["map_variant", "ALTER TABLE matches ADD COLUMN map_variant TEXT"],
+    ["duration_seconds", "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER"],
+    ["results_msg_id", "ALTER TABLE matches ADD COLUMN results_msg_id TEXT"],
+    ["results_fmt", "ALTER TABLE matches ADD COLUMN results_fmt INTEGER"],
+    ["excluded", "ALTER TABLE matches ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0"],
+  ];
+  for (const [col, sql] of migrations) {
+    if (!have.has(col)) await db.execute(sql).catch(() => {});
   }
-  // Pre-duration databases: add the column; old rows stay NULL (= always count).
-  await db.execute("ALTER TABLE matches ADD COLUMN duration_seconds INTEGER").catch(() => {});
-  // Discord #game-results message id, captured at post time so a match can be
-  // voided by referencing its post. NULL on rows posted before this existed.
-  await db.execute("ALTER TABLE matches ADD COLUMN results_msg_id TEXT").catch(() => {});
-  // Layout version of the #game-results post (RESULTS_FMT_VERSION at post time).
-  // NULL = posted by an older build / never stamped → eligible for re-styling.
-  await db.execute("ALTER TABLE matches ADD COLUMN results_fmt INTEGER").catch(() => {});
-  // Manually-voided flag: 1 = excluded from every leaderboard (forced off-format)
-  // while the match + its #game-results post are kept. 0 / NULL = counts normally.
-  await db
-    .execute("ALTER TABLE matches ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0")
-    .catch(() => {});
 
   return db;
 }
