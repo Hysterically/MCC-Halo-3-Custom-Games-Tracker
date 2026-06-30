@@ -9,6 +9,8 @@
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <unordered_set>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -330,12 +332,15 @@ private:
     }
 
     void ensureSchema() {
-        run({execReq("CREATE TABLE IF NOT EXISTS players (xuid TEXT PRIMARY KEY, gamertag TEXT NOT "
+        // Create the schema and read back the matches columns in one round-trip.
+        auto res = run(
+            {execReq("CREATE TABLE IF NOT EXISTS players (xuid TEXT PRIMARY KEY, gamertag TEXT NOT "
                      "NULL, first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL)"),
              execReq("CREATE TABLE IF NOT EXISTS matches (match_id TEXT PRIMARY KEY, game_type TEXT "
                      "NOT NULL, teams_enabled INTEGER NOT NULL, played_at INTEGER NOT NULL, "
                      "winning_team_id INTEGER, recorded_at INTEGER NOT NULL, map_name TEXT, "
-                     "map_variant TEXT, duration_seconds INTEGER)"),
+                     "map_variant TEXT, duration_seconds INTEGER, results_msg_id TEXT, "
+                     "results_fmt INTEGER, excluded INTEGER NOT NULL DEFAULT 0)"),
              execReq("CREATE TABLE IF NOT EXISTS match_players (match_id TEXT NOT NULL REFERENCES "
                      "matches(match_id) ON DELETE CASCADE, xuid TEXT NOT NULL, gamertag TEXT NOT "
                      "NULL, team_id INTEGER NOT NULL, standing INTEGER NOT NULL, score INTEGER NOT "
@@ -343,16 +348,24 @@ private:
                      "NULL, PRIMARY KEY (match_id, xuid))"),
              execReq("CREATE INDEX IF NOT EXISTS idx_matches_played_at ON matches(played_at)"),
              execReq("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)"),
+             execReq("PRAGMA table_info(matches)", {}, true),
              closeReq()});
-        // Migrate pre-map databases in place; a "duplicate column" error just
-        // means the migration already ran.
-        for (const char* sql :
-             {"ALTER TABLE matches ADD COLUMN map_name TEXT",
-              "ALTER TABLE matches ADD COLUMN map_variant TEXT",
-              "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER",
-              "ALTER TABLE matches ADD COLUMN results_msg_id TEXT",
-              "ALTER TABLE matches ADD COLUMN results_fmt INTEGER",
-              "ALTER TABLE matches ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0"}) {
+
+        // Migrate older databases in place. Fresh DBs already have every column
+        // from the CREATE above, so we only ALTER what's actually missing — an
+        // already-current DB then fires zero ALTERs instead of six remote
+        // round-trips (each a "duplicate column" we'd swallow anyway).
+        std::unordered_set<std::string> have;
+        for (const auto& row : res.back()["rows"]) have.insert(cellText(row[1]));  // col 1 = name
+        const std::pair<const char*, const char*> migrations[] = {
+            {"map_name", "ALTER TABLE matches ADD COLUMN map_name TEXT"},
+            {"map_variant", "ALTER TABLE matches ADD COLUMN map_variant TEXT"},
+            {"duration_seconds", "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER"},
+            {"results_msg_id", "ALTER TABLE matches ADD COLUMN results_msg_id TEXT"},
+            {"results_fmt", "ALTER TABLE matches ADD COLUMN results_fmt INTEGER"},
+            {"excluded", "ALTER TABLE matches ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0"}};
+        for (const auto& [col, sql] : migrations) {
+            if (have.count(col)) continue;
             try {
                 run({execReq(sql), closeReq()});
             } catch (...) {
