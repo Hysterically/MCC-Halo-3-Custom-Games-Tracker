@@ -22,7 +22,10 @@ if exist "%ProgramFiles%\nodejs\node.exe" (
   set "PATH=%ProgramFiles%\nodejs;%PATH%"
   goto have_node
 )
-echo [setup] Node.js not found - installing it now (one-time, about a minute)...
+rem NOTE: no parentheses in echo text anywhere in this file - a ")" inside an
+rem if-block ends the block and cmd aborts the whole script with the window
+rem closing instantly (this exact bug shipped in v2.0.0/v2.0.1).
+echo [setup] Node.js not found - installing it now, one time, about a minute...
 winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements
 if errorlevel 1 (
   echo.
@@ -44,7 +47,7 @@ if errorlevel 1 (
 
 rem --- one-time: install the tracker's packages -------------------------------
 if not exist node_modules (
-  echo [setup] Installing tracker packages (one-time)...
+  echo [setup] Installing tracker packages - one time, about a minute...
   call npm install --no-audit --no-fund
   if errorlevel 1 (
     echo.
