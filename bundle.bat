@@ -32,6 +32,7 @@ copy /y "%HERE%package-lock.json"    "%STAGE%\app\" >nul
 copy /y "%HERE%tsconfig.json"        "%STAGE%\app\" >nul
 copy /y "%HERE%packaging\aliases.json" "%STAGE%\app\" >nul
 <nul set /p ="%VERSION%" > "%STAGE%\app\version.txt"
+copy /y "%HERE%packaging\Install.bat"  "%STAGE%\" >nul
 copy /y "%HERE%packaging\Run-Tracker.bat"  "%STAGE%\" >nul
 copy /y "%HERE%packaging\Setup.bat"  "%STAGE%\" >nul
 copy /y "%HERE%packaging\README.txt" "%STAGE%\" >nul

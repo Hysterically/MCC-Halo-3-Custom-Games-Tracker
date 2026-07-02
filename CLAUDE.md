@@ -15,16 +15,21 @@ Type-check before shipping: `npm run typecheck`.
 
 ## Distribution
 
-`bundle.bat vX.Y.Z` (repo root) stages `src/` + `package.json` +
-`package-lock.json` + `tsconfig.json` + `packaging/` (Run-Tracker.bat /
-Setup.bat / README.txt / neutral aliases.json) + `version.txt` into
-`dist\h3-tracker-windows.zip`. Zip layout: root has ONLY Run-Tracker.bat /
-Setup.bat / README.txt; everything else (source, configs, version.txt, later
-node_modules/data/.env) lives in `app\` so the extracted folder looks simple.
-The zip is self-bootstrapping: `Run-Tracker.bat` installs Node.js via winget
-and runs `npm install` on first run, then `npx tsx src/watch.ts`.
-`version.txt` feeds `H3_VERSION` for the outdated-build check
-(`src/updateCheck.ts`).
+`bundle.bat vX.Y.Z` (repo root) stages `src/` + `assets/` + `package.json` +
+`package-lock.json` + `tsconfig.json` + `packaging/` (Install.bat /
+Run-Tracker.bat / Setup.bat / README.txt / neutral aliases.json) +
+`version.txt` into `dist\h3-tracker-windows.zip`. Zip layout: root has ONLY
+the three bats + README.txt; everything else (source, assets, configs,
+version.txt, later node_modules/data/.env) lives in `app\` so the extracted
+folder looks simple. Split launchers (v2.1.0, user's consent concern):
+`Install.bat` = one-time, explicit-consent setup (winget Node if missing +
+`npm install`); `Run-Tracker.bat` NEVER installs anything — it refuses with
+"run Install.bat first" if Node/node_modules are missing, else runs
+`npx tsx src/watch.ts`. `version.txt` feeds `H3_VERSION` for the
+outdated-build check (`src/updateCheck.ts`). ALL .bat files must be CRLF
+(cmd can't find `call :label` targets in LF files; .gitattributes pins it,
+bundle.bat re-normalizes staged bats) and must contain NO parentheses inside
+echo text (a `)` inside an if-block aborts the script).
 
 ## MANDATORY: publish a release after every update
 
