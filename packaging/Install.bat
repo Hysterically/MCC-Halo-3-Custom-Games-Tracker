@@ -6,28 +6,41 @@ rem NOTE: no parentheses in echo text anywhere in this file - a ")" inside an
 rem if-block ends the block and cmd aborts the whole script.
 title Halo 3 Customs Tracker - Install
 
-echo This sets up the Halo 3 Customs Tracker on this PC:
-echo.
-echo   1. Node.js is installed - only if it's missing. Windows may show an
-echo      administrator prompt for its installer.
-echo   2. The tracker's packages are downloaded into the app folder.
-echo.
-echo Press any key to start the setup - or close this window to cancel.
-pause >nul
-echo.
-
 rem A .env dropped next to the launchers belongs in app\ where the tracker
 rem reads it from.
 if exist "%~dp0.env" move /y "%~dp0.env" "%~dp0app\.env" >nul
 cd /d "%~dp0app"
 if exist version.txt set /p H3_VERSION=<version.txt
 
-rem --- Node.js -----------------------------------------------------------------
+rem Check Node.js up front so the consent prompt below can say exactly what
+rem pressing a key will do on THIS pc, instead of a generic "if missing".
 where node >nul 2>nul
-if not errorlevel 1 goto node_ok
+if not errorlevel 1 goto have_node
 call :find_node
 if defined NODE_DIR set "PATH=%NODE_DIR%;%PATH%"
-if defined NODE_DIR goto node_ok
+if defined NODE_DIR goto have_node
+set "NEED_NODE=1"
+:have_node
+
+echo This sets up the Halo 3 Customs Tracker on this PC:
+echo.
+if defined NEED_NODE (
+  echo   1. Installs Node.js - the tracker isn't running yet without it.
+  echo      Windows may show an administrator prompt for its installer.
+  echo   2. Downloads the tracker's packages into the app folder.
+  echo.
+  echo Press any key to install Node.js and set up the tracker - or close
+  echo this window to cancel.
+) else (
+  echo   Node.js is already installed on this PC, so this just downloads
+  echo   the tracker's packages into the app folder.
+  echo.
+  echo Press any key to set up the tracker - or close this window to cancel.
+)
+pause >nul
+echo.
+
+if not defined NEED_NODE goto node_ok
 echo [install] Installing Node.js - about a minute...
 winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements
 rem winget's failure codes are 0x8A15xxxx values, NEGATIVE as signed ints, so
