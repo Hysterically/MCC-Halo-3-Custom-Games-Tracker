@@ -34,6 +34,7 @@ export interface StoredMatch {
   mapName?: string;
   mapVariant?: string;
   durationSeconds?: number; // longest secondsPlayed; undefined on pre-tracking rows
+  excluded: boolean; // manually voided from the boards (off-format, still posted)
   players: {
     xuid: string;
     gamertag: string;
@@ -101,7 +102,10 @@ export async function openDb(url: string, authToken?: string): Promise<DB> {
          recorded_at     INTEGER NOT NULL,
          map_name        TEXT,
          map_variant     TEXT,
-         duration_seconds INTEGER
+         duration_seconds INTEGER,
+         results_msg_id  TEXT,
+         results_fmt     INTEGER,
+         excluded        INTEGER NOT NULL DEFAULT 0
        )`,
       `CREATE TABLE IF NOT EXISTS match_players (
          match_id  TEXT NOT NULL REFERENCES matches(match_id) ON DELETE CASCADE,
@@ -124,15 +128,30 @@ export async function openDb(url: string, authToken?: string): Promise<DB> {
     "write",
   );
 
-  // Migrate pre-map databases in place; "duplicate column" just means done.
-  for (const col of ["map_name", "map_variant"]) {
-    await db.execute(`ALTER TABLE matches ADD COLUMN ${col} TEXT`).catch(() => {});
+  // Migrate older databases in place. Fresh DBs already have every column from
+  // the CREATE above, so we read the current columns once and only ALTER what's
+  // missing — an already-current DB then costs a single round-trip here instead
+  // of firing six ALTERs (each its own remote round-trip) that all no-op.
+  //   results_msg_id   — Discord #game-results message id, captured at post time
+  //                      so a match can be voided by referencing its post.
+  //   results_fmt      — layout version of that post (RESULTS_FMT_VERSION at post
+  //                      time); NULL = older build / never stamped → re-stylable.
+  //   excluded         — manually-voided flag: 1 = off every leaderboard while
+  //                      the match + its post are kept. 0 / NULL = counts.
+  const have = new Set(
+    (await db.execute("PRAGMA table_info(matches)")).rows.map((r) => String(r.name)),
+  );
+  const migrations: [string, string][] = [
+    ["map_name", "ALTER TABLE matches ADD COLUMN map_name TEXT"],
+    ["map_variant", "ALTER TABLE matches ADD COLUMN map_variant TEXT"],
+    ["duration_seconds", "ALTER TABLE matches ADD COLUMN duration_seconds INTEGER"],
+    ["results_msg_id", "ALTER TABLE matches ADD COLUMN results_msg_id TEXT"],
+    ["results_fmt", "ALTER TABLE matches ADD COLUMN results_fmt INTEGER"],
+    ["excluded", "ALTER TABLE matches ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0"],
+  ];
+  for (const [col, sql] of migrations) {
+    if (!have.has(col)) await db.execute(sql).catch(() => {});
   }
-  // Pre-duration databases: add the column; old rows stay NULL (= always count).
-  await db.execute("ALTER TABLE matches ADD COLUMN duration_seconds INTEGER").catch(() => {});
-  // Discord #game-results message id, captured at post time so a match can be
-  // voided by referencing its post. NULL on rows posted before this existed.
-  await db.execute("ALTER TABLE matches ADD COLUMN results_msg_id TEXT").catch(() => {});
 
   return db;
 }
@@ -182,6 +201,36 @@ export async function kvCas(db: DB, k: string, expected: string, next: string): 
     }),
   );
   return res.rowsAffected === 1;
+}
+
+// --- hidden players ---------------------------------------------------------
+// A set of XUIDs that are kept in the data (their games still rate everyone
+// else) but suppressed from the rendered leaderboards. Stored as a JSON array
+// under the kv key `hidden_players` so every runner — TS or C++ — filters the
+// shared board consistently. Keyed by XUID (stable across gamertag changes).
+
+const HIDDEN_KEY = "hidden_players";
+
+/** The set of XUIDs currently hidden from the leaderboards. */
+export async function hiddenXuids(db: DB): Promise<Set<string>> {
+  const raw = await kvGet(db, HIDDEN_KEY);
+  if (!raw) return new Set();
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    return new Set(Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** Hide (or, with `hidden=false`, un-hide) a player by XUID. Returns true if it changed. */
+export async function setPlayerHidden(db: DB, xuid: string, hidden: boolean): Promise<boolean> {
+  const set = await hiddenXuids(db);
+  if (hidden ? set.has(xuid) : !set.has(xuid)) return false;
+  if (hidden) set.add(xuid);
+  else set.delete(xuid);
+  await kvSet(db, HIDDEN_KEY, JSON.stringify([...set]));
+  return true;
 }
 
 export async function hasMatch(db: DB, matchId: string): Promise<boolean> {
@@ -262,7 +311,7 @@ export async function matchesChrono(db: DB): Promise<StoredMatch[]> {
   // Two bulk queries (not N+1) keep this cheap over a remote DB.
   const matchesRes = await db.execute(
     `SELECT match_id, game_type, teams_enabled, played_at, winning_team_id, map_name, map_variant,
-            duration_seconds
+            duration_seconds, excluded
        FROM matches ORDER BY played_at ASC, recorded_at ASC`,
   );
   const playersRes = await db.execute(
@@ -296,6 +345,7 @@ export async function matchesChrono(db: DB): Promise<StoredMatch[]> {
     mapName: m.map_name == null ? undefined : String(m.map_name),
     mapVariant: m.map_variant == null ? undefined : String(m.map_variant),
     durationSeconds: m.duration_seconds == null ? undefined : num(m.duration_seconds),
+    excluded: !!num(m.excluded),
     players: byMatch.get(String(m.match_id)) ?? [],
   }));
 }
@@ -328,6 +378,74 @@ export async function matchIdByResultsMsg(db: DB, msgId: string): Promise<string
     args: [msgId],
   });
   return res.rows[0] ? String(res.rows[0].match_id) : undefined;
+}
+
+/** Stamp the layout version a match's #game-results post was last rendered at. */
+export async function setMatchResultsFmt(db: DB, matchId: string, version: number): Promise<void> {
+  await serializeWrite(() =>
+    db.execute({
+      sql: "UPDATE matches SET results_fmt = ? WHERE match_id = ?",
+      args: [version, matchId],
+    }),
+  );
+}
+
+/** Forget a match's #game-results post id (e.g. the message was deleted / 404). */
+export async function clearMatchResultsMsg(db: DB, matchId: string): Promise<void> {
+  await serializeWrite(() =>
+    db.execute({
+      sql: "UPDATE matches SET results_msg_id = NULL, results_fmt = NULL WHERE match_id = ?",
+      args: [matchId],
+    }),
+  );
+}
+
+/** A tracked #game-results post that may need re-styling: its match + message id. */
+export interface RestyleTarget {
+  matchId: string;
+  msgId: string;
+}
+
+/**
+ * #game-results posts whose layout is behind `version` (or, when `force`, every
+ * post with a known message id) — the work list for the startup heal. Only rows
+ * with a stored results_msg_id are returned; legacy posts with no id are adopted
+ * separately (heal.ts Tier B) before this runs.
+ */
+export async function resultsRestyleTargets(
+  db: DB,
+  version: number,
+  force = false,
+): Promise<RestyleTarget[]> {
+  const res = force
+    ? await db.execute("SELECT match_id, results_msg_id FROM matches WHERE results_msg_id IS NOT NULL")
+    : await db.execute({
+        sql: `SELECT match_id, results_msg_id FROM matches
+               WHERE results_msg_id IS NOT NULL
+                 AND (results_fmt IS NULL OR results_fmt < ?)`,
+        args: [version],
+      });
+  return res.rows.map((r) => ({ matchId: String(r.match_id), msgId: String(r.results_msg_id) }));
+}
+
+/** match_id -> recorded_at (epoch ms). The pairing key for adopting legacy posts. */
+export async function recordedAtByMatch(db: DB): Promise<Map<string, number>> {
+  const res = await db.execute("SELECT match_id, recorded_at FROM matches");
+  return new Map(res.rows.map((r) => [String(r.match_id), num(r.recorded_at)]));
+}
+
+/**
+ * Flag (or un-flag) a match as excluded: when set, boardCategory() forces it to
+ * "other" so it drops off every leaderboard (CSR recomputes from history) while
+ * the match row and its #game-results post are kept. Reversible.
+ */
+export async function setMatchExcluded(db: DB, matchId: string, excluded: boolean): Promise<void> {
+  await serializeWrite(() =>
+    db.execute({
+      sql: "UPDATE matches SET excluded = ? WHERE match_id = ?",
+      args: [excluded ? 1 : 0, matchId],
+    }),
+  );
 }
 
 /** Delete a match and its players (match_players cascades via ON DELETE CASCADE). Returns rows removed. */

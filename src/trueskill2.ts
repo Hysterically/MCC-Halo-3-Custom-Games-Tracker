@@ -18,7 +18,7 @@
 
 import type { StoredMatch } from "./db.ts";
 import { boardCategory } from "./category.ts";
-import { csrFromSkill, type Csr } from "./csr.ts";
+import { csrFromSkill, CHAMPION_THRESHOLD, type Csr } from "./csr.ts";
 
 // ---------------------------------------------------------------------------
 // TrueSkill parameters. The skill-class constants (mu0, sigma0, beta, draw)
@@ -53,6 +53,12 @@ const EXP_CAP = 200; // paper caps experience at 200
 // signal — the per-mode / objective weighting is the separate "+ OBJ" variant.)
 const PERF_SPREAD = BETA; // ~4.17 rating pts per K/D std-dev (all modes)
 const OBS_BETA = 2 * BETA; // ~8.33 — performance-observation noise
+
+// Win-chance bar: the displayed bar is a plain monotonic (logistic) function of the
+// gap between the two teams' *displayed* average CSR — the same numbers printed beside
+// the bar — so it can never contradict them. Scale is CSR points per e-fold of odds,
+// anchored so a ~127-CSR average gap reads ~73% (matches the reference design).
+const WIN_BAR_CSR_SCALE = 130;
 
 function experienceOffset(games: number): number {
   return EXP_OFFSET_MAX * Math.exp(-Math.min(games, EXP_CAP) / EXP_OFFSET_SCALE);
@@ -522,6 +528,20 @@ export function rateCategory(
 // Per-match CSR change (the analog of elo.ts' matchEloChanges).
 // ---------------------------------------------------------------------------
 
+/** Pre-match win-probability + average CSR for one team in a 2-team matchup. */
+export interface TeamWinChance {
+  teamId: number;
+  /** Mean of the team's rated players' pre-match CSR (rounded). */
+  avgCsr: number;
+  /** Pre-match probability this team wins (the two teams sum to ~1). */
+  winProb: number;
+}
+
+/** The two teams of a rated 2-team match, for the result-post win bar. */
+export interface MatchWinChances {
+  teams: [TeamWinChance, TeamWinChance];
+}
+
 /** A player's post-match CSR and the change (in CSR points) this match produced. */
 export interface CsrChange {
   /** Conservative skill mu - 3*sigma after this match. */
@@ -530,6 +550,12 @@ export interface CsrChange {
   csr: Csr;
   /** Change in CSR value this match produced (post - pre). */
   delta: number;
+  /**
+   * True if this player is a Champion as of this match: up to the top 3 of their
+   * board (by skill, hidden players excluded) who have also cleared the Champion
+   * floor (CHAMPION_THRESHOLD) — the same rule the leaderboard applies.
+   */
+  champion?: boolean;
 }
 
 /**
@@ -542,6 +568,7 @@ export interface CsrChange {
 export function matchCsrChanges(
   matches: StoredMatch[],
   matchId: string,
+  hidden: ReadonlySet<string> = new Set(),
 ): Map<string, CsrChange> | null {
   const idx = matches.findIndex((m) => m.matchId === matchId);
   if (idx === -1) return null;
@@ -551,7 +578,20 @@ export function matchCsrChanges(
 
   const hist = matches.slice(0, idx + 1).filter((m) => boardCategory(m) === cat);
   const before = new Map(rateCategory(hist.slice(0, -1)).map((r) => [r.xuid, r.skill]));
-  const after = new Map(rateCategory(hist).map((r) => [r.xuid, r.skill]));
+  const afterRows = rateCategory(hist);
+  const after = new Map(afterRows.map((r) => [r.xuid, r.skill]));
+
+  // Champions = up to the top 3 of this board (ranked by skill, hidden players
+  // excluded) who have also cleared the Champion floor — the same rule the
+  // leaderboard applies (renderCsrLeaderboard.isChampion), evaluated as of THIS
+  // match so each post is a faithful snapshot.
+  const champions = new Set<string>();
+  const ranked = afterRows
+    .filter((r) => r.games > 0 && !hidden.has(r.xuid))
+    .sort((a, b) => b.skill - a.skill);
+  for (let i = 0; i < Math.min(3, ranked.length); i++) {
+    if (csrFromSkill(ranked[i].skill).value >= CHAMPION_THRESHOLD) champions.add(ranked[i].xuid);
+  }
 
   const changes = new Map<string, CsrChange>();
   for (const p of match.players) {
@@ -560,7 +600,77 @@ export function matchCsrChanges(
     const b = before.get(p.xuid) ?? SEED_SKILL;
     const csrAfter = csrFromSkill(a);
     const csrBefore = csrFromSkill(b);
-    changes.set(p.xuid, { skill: a, csr: csrAfter, delta: csrAfter.value - csrBefore.value });
+    changes.set(p.xuid, {
+      skill: a,
+      csr: csrAfter,
+      delta: csrAfter.value - csrBefore.value,
+      champion: champions.has(p.xuid),
+    });
   }
   return changes;
+}
+
+/**
+ * Pre-match win probability + average CSR for each team of a rated 2-team match,
+ * for the result-post win bar. Each team's average CSR is the mean of its rated
+ * players' pre-match CSR (the ratings *before* this match — the same pre-replay
+ * `matchCsrChanges` diffs against). The bar is a plain monotonic function of the
+ * gap between those two *displayed* averages — `P(A) = 1/(1 + e^(−(avgA − avgB)/
+ * WIN_BAR_CSR_SCALE))` — so it can never disagree with the numbers printed beside
+ * it. The team listed first is the winner (so the bar's left side matches the
+ * board's winner-first ordering).
+ *
+ * Returns null unless the match is on-format, has teams, and groups into exactly
+ * two teams that each have at least one rated player.
+ */
+export function matchWinChances(
+  matches: StoredMatch[],
+  matchId: string,
+): MatchWinChances | null {
+  const idx = matches.findIndex((m) => m.matchId === matchId);
+  if (idx === -1) return null;
+  const match = matches[idx];
+  if (!match.teamsEnabled) return null;
+  const cat = boardCategory(match);
+  if (cat === "other") return null;
+
+  const hist = matches.slice(0, idx + 1).filter((m) => boardCategory(m) === cat);
+  const pre = new Map(rateCategory(hist.slice(0, -1)).map((r) => [r.xuid, r]));
+
+  interface Agg {
+    teamId: number;
+    csrSum: number;
+    n: number;
+  }
+  const teams = new Map<number, Agg>();
+  for (const p of match.players) {
+    if (!p.xuid) continue; // unrated guest — not part of the team rating
+    const r = pre.get(p.xuid);
+    const mu = r?.mu ?? MU0;
+    const sigma = r?.sigma ?? SIGMA0;
+    const t = teams.get(p.teamId) ?? { teamId: p.teamId, csrSum: 0, n: 0 };
+    t.csrSum += csrFromSkill(mu - 3 * sigma).value; // unrated -> CSR 0
+    t.n += 1;
+    teams.set(p.teamId, t);
+  }
+  if (teams.size !== 2) return null;
+
+  // Winner first so the bar's left segment matches the board's row ordering.
+  const [A, B] = [...teams.values()].sort((x, y) => {
+    if (match.winningTeamId != null) {
+      if (x.teamId === match.winningTeamId) return -1;
+      if (y.teamId === match.winningTeamId) return 1;
+    }
+    return x.teamId - y.teamId;
+  });
+  const avgA = Math.round(A.csrSum / A.n);
+  const avgB = Math.round(B.csrSum / B.n);
+  // Bar = logistic of the gap between the two displayed average CSRs.
+  const probA = 1 / (1 + Math.exp(-(avgA - avgB) / WIN_BAR_CSR_SCALE));
+  return {
+    teams: [
+      { teamId: A.teamId, avgCsr: avgA, winProb: probA },
+      { teamId: B.teamId, avgCsr: avgB, winProb: 1 - probA },
+    ],
+  };
 }

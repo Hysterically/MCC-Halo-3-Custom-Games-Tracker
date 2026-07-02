@@ -66,4 +66,11 @@ if (config.discordLeaderboardWebhookUrl) {
   console.log("[discord] leaderboard message refreshed.");
 }
 
+// Deleting a game shifts the CSR timeline for every later match, so the frozen
+// change labels on those #game-results posts are now stale. Force-re-style all
+// tracked posts so they resync with the recomputed CSR (same as the `/delete`
+// Discord command does). Needs the results webhook + bot token configured.
+const { healStaleResults } = await import("./heal.ts");
+await healStaleResults(db, { force: true, log: (m) => console.log("[heal]", m) });
+
 db.close();

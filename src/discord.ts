@@ -17,22 +17,32 @@ import {
   Client,
   GatewayIntentBits,
   PermissionFlagsBits,
+  MessageFlags,
   REST,
   Routes,
   SlashCommandBuilder,
+  type APIEmbed,
+  type AutocompleteInteraction,
+  type ButtonInteraction,
   type ChatInputCommandInteraction,
 } from "discord.js";
+import { config } from "./config.ts";
+import { statusBar } from "./term.ts";
 import type { DB, StoredMatch } from "./db.ts";
 import {
   matchCount,
   matchesChrono,
   matchIdByResultsMsg,
+  resultsRestyleTargets,
   deleteMatch,
+  setMatchExcluded,
+  hiddenXuids,
   kvGet,
   kvClaim,
   kvCas,
   kvDelete,
 } from "./db.ts";
+import { restyleResultPost } from "./heal.ts";
 import { computeRatings, type EloChange, type EloOptions, type Rating } from "./elo.ts";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import {
@@ -41,12 +51,13 @@ import {
   CATEGORY_LABEL,
   BOARD_CATEGORIES,
   LEADERBOARD_POST_ORDER,
+  RETIRED_BOARD_CATEGORIES,
   type Category,
 } from "./category.ts";
 import { displayName } from "./aliases.ts";
 import { renderCarnagePng, renderCarnageCsrPng } from "./renderCarnage.ts";
 import { renderLeaderboardPng, type BoardSection } from "./renderLeaderboard.ts";
-import { rateCategory, type CsrChange } from "./trueskill2.ts";
+import { rateCategory, type CsrChange, type MatchWinChances } from "./trueskill2.ts";
 import { renderCsrLeaderboardPng, type CsrRow } from "./renderCsrLeaderboard.ts";
 import { csrFromSkill, csrText } from "./csr.ts";
 
@@ -54,6 +65,14 @@ import { csrFromSkill, csrText } from "./csr.ts";
 
 /** Podium markers for the top three places (gold, silver, bronze). */
 const MEDALS = ["🥇", "🥈", "🥉"];
+
+/** Embed accent colors, shared with the C++ build (cpp/src/format.cpp). */
+const EMBED = {
+  neutral: 0x5865f2, // blurple — leaderboards, stats, recap
+  win: 0x57f287, // green — restored / counted
+  danger: 0xed4245, // red — voided / off-format
+  gold: 0xfee75c, // recap highlights
+};
 
 /** One leaderboard section (just the code block, no outer heading). */
 function formatSection(title: string, ratings: Rating[], limit = 20): string {
@@ -163,9 +182,9 @@ function resolvePlayer(
 }
 
 /**
- * Per-player stats card: ELO, rank, W-L-D, Win% and K/D in each board category
- * (2v2 / 4v4 / FFA), plus an overall line. Categories the player hasn't played
- * are omitted. `query` is a Gamertag or display alias (partial accepted).
+ * Per-player stats card: ELO, rank, W-L-D, Win% and K/D for the 4v4 board, plus
+ * an overall line. Omitted if the player hasn't played 4v4. `query` is a
+ * Gamertag or display alias (partial accepted).
  */
 export function formatPlayerStats(
   matches: StoredMatch[],
@@ -207,7 +226,7 @@ export function formatPlayerStats(
   }
 
   if (!rows.length) {
-    return `📊 **${who.label}** hasn't played any ranked (2v2 / 4v4 / FFA) matches yet.`;
+    return `📊 **${who.label}** hasn't played any ranked 4v4 matches yet.`;
   }
 
   const w = {
@@ -372,10 +391,12 @@ async function postAndReturnId(
   content: string,
   png?: Buffer,
   filename = "leaderboard.png",
+  components?: object[],
 ): Promise<string> {
   const u = new URL(url);
   u.searchParams.set("wait", "true");
-  const payload = { content, allowed_mentions: { parse: [] } };
+  const payload: Record<string, unknown> = { content, allowed_mentions: { parse: [] } };
+  if (components) payload.components = components;
   const res = await fetch(
     u,
     png
@@ -394,7 +415,7 @@ async function postAndReturnId(
 }
 
 /** DELETE an existing message. Swallows 404 (already gone) and never throws. */
-async function deleteMessage(url: string, messageId: string): Promise<void> {
+export async function deleteMessage(url: string, messageId: string): Promise<void> {
   try {
     await fetch(`${url}/messages/${messageId}`, { method: "DELETE" });
   } catch {
@@ -529,14 +550,30 @@ async function retireCombinedLeaderboard(url: string, db: DB): Promise<void> {
 }
 
 /**
- * Refresh the live leaderboard as THREE persistent messages — one per board
- * category, each its own standings PNG (text section as fallback) edited in
- * place. They're posted 2v2 → FFA → 4v4 ({@link LEADERBOARD_POST_ORDER}) so the
- * 4v4 board lands at the bottom of the channel: the newest / most in-focus one.
+ * Retire the per-category boards that no longer exist (2v2 / FFA). One-time
+ * cleanup mirroring {@link retireCombinedLeaderboard}: delete each retired
+ * board's message and drop its `lb_msg:<webhook>:<cat>` slot so a stale 2v2 /
+ * FFA board doesn't linger above the live 4v4 one.
+ */
+async function retireDroppedBoards(url: string, db: DB): Promise<void> {
+  const base = webhookId(url);
+  for (const cat of RETIRED_BOARD_CATEGORIES) {
+    const key = `lb_msg:${base}:${cat}`;
+    const old = await kvGet(db, key);
+    if (!old) continue;
+    await deleteMessage(url, old);
+    await kvDelete(db, key);
+  }
+}
+
+/**
+ * Refresh the live leaderboard as a persistent message per board category — now
+ * just the 4v4 board ({@link LEADERBOARD_POST_ORDER}), each its own standings
+ * PNG (text section as fallback) edited in place.
  *
  * Each message's id is held in the shared DB under `lb_msg:<webhook>:<cat>`, so
- * every instance edits the SAME three messages instead of each posting its own.
- * See {@link upsertOneMessage} for the per-message race handling.
+ * every instance edits the SAME message instead of each posting its own. See
+ * {@link upsertOneMessage} for the per-message race handling.
  */
 export async function upsertLeaderboard(
   url: string | undefined,
@@ -545,8 +582,9 @@ export async function upsertLeaderboard(
 ): Promise<void> {
   if (!url) return;
   const matches = await matchesChrono(db);
-  // Drop the old single combined message if this webhook still tracks one.
+  // Drop the old single combined message + the retired 2v2 / FFA boards.
   await retireCombinedLeaderboard(url, db);
+  await retireDroppedBoards(url, db);
 
   const byCat = groupByCategory(matches);
   const base = webhookId(url);
@@ -589,23 +627,49 @@ export async function postCsrMatchResult(
   url: string | undefined,
   report: CarnageReport,
   csrChanges?: Map<string, CsrChange>,
+  win?: MatchWinChances,
+  components?: object[],
 ): Promise<string | undefined> {
   if (!url) return undefined;
   let png: Buffer | undefined;
   try {
-    png = await renderCarnageCsrPng(report, csrChanges);
+    png = await renderCarnageCsrPng(report, csrChanges, win);
   } catch (e) {
     console.warn("[discord] CSR carnage render failed, falling back to text:", (e as Error).message);
   }
   return png
-    ? postAndReturnId(url, formatMatchCaption(report), png, "carnage-csr.png")
-    : postAndReturnId(url, formatMatchResult(report) + formatCsrLine(report, csrChanges));
+    ? postAndReturnId(url, formatMatchCaption(report), png, "carnage-csr.png", components)
+    : postAndReturnId(
+        url,
+        formatMatchResult(report) + formatCsrLine(report, csrChanges),
+        undefined,
+        "leaderboard.png",
+        components,
+      );
+}
+
+/**
+ * Post a per-match result with the Void/Exclude buttons when an app-owned
+ * webhook is available (it carries components; a plain webhook can't), else the
+ * plain post to the configured results webhook. The watcher's entry point —
+ * resolves the right webhook + buttons so watch.ts stays simple. Returns the id.
+ */
+export async function postCsrMatchResultWithControls(
+  db: DB,
+  report: CarnageReport,
+  csrChanges?: Map<string, CsrChange>,
+  win?: MatchWinChances,
+): Promise<string | undefined> {
+  const appUrl = await kvGet(db, APP_WEBHOOK_KEY);
+  const url = appUrl ?? config.discordResultsWebhookUrl;
+  const components = appUrl ? matchButtons(report.matchId) : undefined;
+  return postCsrMatchResult(url, report, csrChanges, win, components);
 }
 
 /** Per-category CSR rows, ranked best-first — the shape the PNG renderer wants. */
-function csrRows(matches: StoredMatch[]): CsrRow[] {
+function csrRows(matches: StoredMatch[], hidden: ReadonlySet<string> = new Set()): CsrRow[] {
   return rateCategory(matches)
-    .filter((r) => r.games > 0)
+    .filter((r) => r.games > 0 && !hidden.has(r.xuid))
     .sort((a, b) => b.skill - a.skill)
     .map((r) => ({
       gamertag: r.gamertag,
@@ -621,10 +685,14 @@ function csrRows(matches: StoredMatch[]): CsrRow[] {
 }
 
 /** Render one CSR board section to PNG, or undefined if rendering fails. */
-async function tryRenderCsrSection(cat: Category, matches: StoredMatch[]): Promise<Buffer | undefined> {
+async function tryRenderCsrSection(
+  cat: Category,
+  matches: StoredMatch[],
+  hidden: ReadonlySet<string> = new Set(),
+): Promise<Buffer | undefined> {
   try {
     return await renderCsrLeaderboardPng([
-      { title: `${CATEGORY_LABEL[cat].toUpperCase()} LEADERBOARD`, rows: csrRows(matches) },
+      { title: `${CATEGORY_LABEL[cat].toUpperCase()} LEADERBOARD`, rows: csrRows(matches, hidden) },
     ]);
   } catch (e) {
     console.warn("[discord] CSR leaderboard render failed, falling back to text:", (e as Error).message);
@@ -633,9 +701,14 @@ async function tryRenderCsrSection(cat: Category, matches: StoredMatch[]): Promi
 }
 
 /** Text fallback for one CSR board category (mirrors {@link formatSection}). */
-function formatCsrSection(cat: Category, matches: StoredMatch[], limit = 20): string {
+function formatCsrSection(
+  cat: Category,
+  matches: StoredMatch[],
+  hidden: ReadonlySet<string> = new Set(),
+  limit = 20,
+): string {
   const heading = `__**🎖️ ${CATEGORY_LABEL[cat]} — TrueSkill 2**__`;
-  const rows = csrRows(matches).slice(0, limit);
+  const rows = csrRows(matches, hidden).slice(0, limit);
   if (!rows.length) return `${heading}\n_No matches yet._`;
   const names = rows.map((r) => displayName(r.gamertag));
   const nameW = Math.max(6, ...names.map((n) => n.length));
@@ -655,23 +728,25 @@ function formatCsrSection(cat: Category, matches: StoredMatch[], limit = 20): st
 }
 
 /**
- * Refresh the live TrueSkill 2 leaderboard as THREE persistent messages —
- * one per board category — in #ts2-leaderboard, each its own CSR standings PNG
- * (text section as fallback) edited in place. Same per-message race handling and
- * 2v2 → FFA → 4v4 post order as the ELO board ({@link upsertLeaderboard}).
+ * Refresh the live TrueSkill 2 leaderboard as a persistent message per board
+ * category — now just the 4v4 board — in #ts2-leaderboard, its own CSR standings
+ * PNG (text section as fallback) edited in place. Same per-message race handling
+ * as the ELO board ({@link upsertLeaderboard}).
  */
 export async function upsertCsrLeaderboard(url: string | undefined, db: DB): Promise<void> {
   if (!url) return;
   const matches = await matchesChrono(db);
-  // Drop the old single combined message if this webhook still tracks one.
+  const hidden = await hiddenXuids(db);
+  // Drop the old single combined message + the retired 2v2 / FFA boards.
   await retireCombinedLeaderboard(url, db);
+  await retireDroppedBoards(url, db);
 
   const byCat = groupByCategory(matches);
   const base = webhookId(url);
   for (const cat of LEADERBOARD_POST_ORDER) {
     const catMatches = byCat.get(cat) ?? [];
-    const png = await tryRenderCsrSection(cat, catMatches);
-    const content = png ? "" : formatCsrSection(cat, catMatches);
+    const png = await tryRenderCsrSection(cat, catMatches, hidden);
+    const content = png ? "" : formatCsrSection(cat, catMatches, hidden);
     // Reuse the `lb_msg:` slot the ELO board used: on the now-CSR #leaderboard
     // this edits the existing per-category messages in place rather than
     // leaving the old ELO ones behind.
@@ -680,18 +755,24 @@ export async function upsertCsrLeaderboard(url: string | undefined, db: DB): Pro
 }
 
 /** Per-category CSR rating tables in display order, for the combined /leaderboard PNG. */
-function buildCsrBoardSections(matches: StoredMatch[]): { title: string; rows: CsrRow[] }[] {
+function buildCsrBoardSections(
+  matches: StoredMatch[],
+  hidden: ReadonlySet<string> = new Set(),
+): { title: string; rows: CsrRow[] }[] {
   const byCat = groupByCategory(matches);
   return BOARD_CATEGORIES.map((c) => ({
     title: `${CATEGORY_LABEL[c].toUpperCase()} LEADERBOARD`,
-    rows: csrRows(byCat.get(c) ?? []),
+    rows: csrRows(byCat.get(c) ?? [], hidden),
   }));
 }
 
 /** The full CSR leaderboard PNG (all categories), or undefined if rendering fails. */
-async function tryRenderCsrLeaderboard(matches: StoredMatch[]): Promise<Buffer | undefined> {
+async function tryRenderCsrLeaderboard(
+  matches: StoredMatch[],
+  hidden: ReadonlySet<string> = new Set(),
+): Promise<Buffer | undefined> {
   try {
-    return await renderCsrLeaderboardPng(buildCsrBoardSections(matches));
+    return await renderCsrLeaderboardPng(buildCsrBoardSections(matches, hidden));
   } catch (e) {
     console.warn("[discord] CSR leaderboard render failed, falling back to text:", (e as Error).message);
     return undefined;
@@ -699,23 +780,43 @@ async function tryRenderCsrLeaderboard(matches: StoredMatch[]): Promise<Buffer |
 }
 
 /** Text form of the full CSR leaderboard — the PNG fallback and console output. */
-export function formatCsrLeaderboard(matches: StoredMatch[]): string {
+export function formatCsrLeaderboard(
+  matches: StoredMatch[],
+  hidden: ReadonlySet<string> = new Set(),
+): string {
   const byCat = groupByCategory(matches);
-  const sections = BOARD_CATEGORIES.map((c) => formatCsrSection(c, byCat.get(c) ?? []));
+  const sections = BOARD_CATEGORIES.map((c) => formatCsrSection(c, byCat.get(c) ?? [], hidden));
   return ["**Halo 3 Customs — CSR Standings**", ...sections].join("\n\n");
 }
 
+interface CsrStatRow {
+  mode: string;
+  rank: string;
+  csr: string;
+  wld: string;
+  win: string;
+  kd: string;
+}
+type CsrStatsResult =
+  | { kind: "none"; query: string }
+  | { kind: "unranked"; label: string }
+  | {
+      kind: "ok";
+      label: string;
+      rows: CsrStatRow[];
+      totals: { games: number; wins: number; losses: number; draws: number; kills: number; deaths: number };
+    };
+
 /**
- * Per-player CSR stats card: tier + number, rank, W-L-D, Win% and K/D in each
- * board category, plus an overall line — the CSR analog of {@link formatPlayerStats}.
+ * Per-player CSR stats, computed once and rendered as either a text card
+ * ({@link formatCsrPlayerStats}) or a rich embed ({@link buildCsrPlayerStatsEmbed}).
  */
-export function formatCsrPlayerStats(matches: StoredMatch[], query: string): string {
+function computeCsrPlayerStats(matches: StoredMatch[], query: string): CsrStatsResult {
   const who = resolvePlayer(matches, query);
-  if (!who) return `🔍 No player matching **${query}** found.`;
+  if (!who) return { kind: "none", query };
 
   const byCat = groupByCategory(matches);
-  const rows: { mode: string; rank: string; csr: string; wld: string; win: string; kd: string }[] =
-    [];
+  const rows: CsrStatRow[] = [];
   let games = 0,
     wins = 0,
     losses = 0,
@@ -746,9 +847,21 @@ export function formatCsrPlayerStats(matches: StoredMatch[], query: string): str
     });
   }
 
-  if (!rows.length) {
-    return `📊 **${who.label}** hasn't played any ranked (2v2 / 4v4 / FFA) matches yet.`;
-  }
+  if (!rows.length) return { kind: "unranked", label: who.label };
+  return { kind: "ok", label: who.label, rows, totals: { games, wins, losses, draws, kills, deaths } };
+}
+
+/**
+ * Per-player CSR stats card: tier + number, rank, W-L-D, Win% and K/D in each
+ * board category, plus an overall line — the CSR analog of {@link formatPlayerStats}.
+ */
+export function formatCsrPlayerStats(matches: StoredMatch[], query: string): string {
+  const res = computeCsrPlayerStats(matches, query);
+  if (res.kind === "none") return `🔍 No player matching **${query}** found.`;
+  if (res.kind === "unranked")
+    return `📊 **${res.label}** hasn't played any ranked 4v4 matches yet.`;
+  const { label: who_label, rows, totals } = res;
+  const { games, wins, losses, draws, kills, deaths } = totals;
 
   const w = {
     mode: Math.max(4, ...rows.map((r) => r.mode.length)),
@@ -770,9 +883,106 @@ export function formatCsrPlayerStats(matches: StoredMatch[], query: string): str
   const overallWin = games ? `${Math.round((wins / games) * 100)}%` : "—";
   const overall = `Overall: ${games} games · ${wins}-${losses}-${draws} (${overallWin}) · K/D ${overallKd}`;
 
-  return [`📊 **${who.label}** — Halo 3 Customs CSR`, "```", head, ...lines, "", overall, "```"].join(
+  return [`📊 **${who_label}** — Halo 3 Customs CSR`, "```", head, ...lines, "", overall, "```"].join(
     "\n",
   );
+}
+
+/**
+ * Per-player CSR stats as a rich embed (one inline field per board category +
+ * an overall footer), or a plain `content` line for the not-found / unranked
+ * cases. Used by the `/stats <player>` slash reply.
+ */
+export function buildCsrPlayerStatsEmbed(
+  matches: StoredMatch[],
+  query: string,
+): { embed?: APIEmbed; content?: string } {
+  const res = computeCsrPlayerStats(matches, query);
+  if (res.kind === "none") return { content: `🔍 No player matching **${query}** found.` };
+  if (res.kind === "unranked")
+    return {
+      content: `📊 **${res.label}** hasn't played any ranked 4v4 matches yet.`,
+    };
+  const { label, rows, totals } = res;
+  const fields = rows.map((r) => ({
+    name: r.mode,
+    value: `**${r.csr}**\nRank ${r.rank} · ${r.wld} (${r.win}) · K/D ${r.kd}`,
+    inline: true,
+  }));
+  const overallKd = totals.deaths ? (totals.kills / totals.deaths).toFixed(2) : totals.kills.toFixed(2);
+  const overallWin = totals.games ? `${Math.round((totals.wins / totals.games) * 100)}%` : "—";
+  return {
+    embed: {
+      title: `📊 ${label} — Halo 3 Customs CSR`,
+      color: EMBED.neutral,
+      fields,
+      footer: {
+        text: `${totals.games} games · ${totals.wins}-${totals.losses}-${totals.draws} (${overallWin}) · K/D ${overallKd}`,
+      },
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+/** Embed wrapper around the /leaderboard standings PNG (attachment://…). */
+function leaderboardEmbed(): APIEmbed {
+  return {
+    title: "🏆 Halo 3 Customs — CSR Standings",
+    color: EMBED.neutral,
+    image: { url: "attachment://leaderboard.png" },
+    footer: { text: "4v4 — TrueSkill 2" },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * The weekly recap embed: games played, the most active player, the MVP (best
+ * K/D, ≥2 games) over the last `windowMs`, and the current per-category CSR
+ * leaders. Returns null if no counted matches fell in the window.
+ */
+export function buildRecapEmbed(matches: StoredMatch[], windowMs = 7 * 86_400_000): APIEmbed | null {
+  const since = Date.now() - windowMs;
+  const week = matches.filter((m) => m.playedAt >= since && !m.excluded);
+  if (!week.length) return null;
+
+  const byPlayer = new Map<string, { name: string; games: number; kills: number; deaths: number }>();
+  for (const m of week)
+    for (const p of m.players) {
+      if (!p.xuid) continue;
+      const e = byPlayer.get(p.xuid) ?? { name: displayName(p.gamertag), games: 0, kills: 0, deaths: 0 };
+      e.games++;
+      e.kills += p.kills;
+      e.deaths += p.deaths;
+      byPlayer.set(p.xuid, e);
+    }
+  const players = [...byPlayer.values()];
+  const kd = (p: { kills: number; deaths: number }): number => p.kills / Math.max(1, p.deaths);
+  const mostActive = players.slice().sort((a, b) => b.games - a.games)[0];
+  const mvp = players.filter((p) => p.games >= 2).sort((a, b) => kd(b) - kd(a))[0];
+
+  const byCat = groupByCategory(matches);
+  const leaders = BOARD_CATEGORIES.map((cat) => {
+    const top = rateCategory(byCat.get(cat) ?? [])
+      .filter((r) => r.games > 0)
+      .sort((a, b) => b.skill - a.skill)[0];
+    return top
+      ? `**${CATEGORY_LABEL[cat]}** — ${displayName(top.gamertag)} (${csrText(csrFromSkill(top.skill))})`
+      : null;
+  }).filter((s): s is string => s !== null);
+
+  const fields: APIEmbed["fields"] = [
+    { name: "Games this week", value: String(week.length), inline: true },
+  ];
+  if (mostActive) fields.push({ name: "Most active", value: `${mostActive.name} (${mostActive.games})`, inline: true });
+  if (mvp) fields.push({ name: "MVP (K/D)", value: `${mvp.name} (${kd(mvp).toFixed(2)})`, inline: true });
+  if (leaders.length) fields.push({ name: "Current leaders", value: leaders.join("\n") });
+
+  return {
+    title: "📅 Weekly Recap — Halo 3 Customs",
+    color: EMBED.gold,
+    fields,
+    timestamp: new Date().toISOString(),
+  };
 }
 
 // --- slash-command bot ------------------------------------------------------
@@ -793,6 +1003,101 @@ function extractMessageId(raw: string): string | undefined {
   return ids ? ids[ids.length - 1] : undefined;
 }
 
+const DISCORD_API = "https://discord.com/api/v10";
+
+/** Split a webhook URL into its id + token (the two path segments after /webhooks/). */
+function parseWebhookUrl(url: string): { id: string; token: string } | undefined {
+  const m = url.match(/\/webhooks\/(\d+)\/([\w-]+)/);
+  return m ? { id: m[1], token: m[2] } : undefined;
+}
+
+// --- app-owned results webhook (buttons) -----------------------------------
+// Interactive components (the Void/Exclude buttons) are silently dropped by
+// Discord on a plain incoming webhook — only an *application-owned* webhook can
+// carry them. So when a bot token is configured we find-or-create our own
+// webhook in the results channel and post through that; its URL is cached in the
+// shared kv (`results_app_webhook`) so every instance and the watcher converge.
+
+const APP_WEBHOOK_KEY = "results_app_webhook";
+
+/**
+ * Ensure an application-owned webhook exists in the results channel and cache
+ * its URL. Idempotent (find-or-create, so restarts reuse it). Returns the URL,
+ * or undefined if there's no results webhook to derive the channel from / the
+ * bot lacks Manage Webhooks.
+ */
+async function ensureAppResultsWebhook(
+  token: string,
+  appId: string,
+  db: DB,
+): Promise<string | undefined> {
+  const cached = await kvGet(db, APP_WEBHOOK_KEY);
+  if (cached) return cached;
+  const base = config.discordResultsWebhookUrl;
+  if (!base) return undefined;
+  const parsed = parseWebhookUrl(base);
+  if (!parsed) return undefined;
+
+  const auth = { authorization: `Bot ${token}`, "user-agent": "h3-tracker" };
+  try {
+    // The token route needs no auth and tells us which channel to target.
+    const metaRes = await fetch(`${DISCORD_API}/webhooks/${parsed.id}/${parsed.token}`, {
+      headers: { "user-agent": "h3-tracker" },
+    });
+    if (!metaRes.ok) return undefined;
+    const channelId = ((await metaRes.json()) as { channel_id?: string }).channel_id;
+    if (!channelId) return undefined;
+
+    // Reuse our existing app-owned webhook in that channel, else create one.
+    const listRes = await fetch(`${DISCORD_API}/channels/${channelId}/webhooks`, { headers: auth });
+    if (!listRes.ok) return undefined;
+    const hooks = (await listRes.json()) as { id: string; token?: string; application_id?: string }[];
+    let hook = hooks.find((h) => h.application_id === appId && h.token);
+    if (!hook) {
+      const createRes = await fetch(`${DISCORD_API}/channels/${channelId}/webhooks`, {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ name: "H3 Tracker" }),
+      });
+      if (!createRes.ok) return undefined;
+      hook = (await createRes.json()) as { id: string; token?: string; application_id?: string };
+    }
+    if (!hook?.token) return undefined;
+    const url = `${DISCORD_API}/webhooks/${hook.id}/${hook.token}`;
+    await kvClaim(db, APP_WEBHOOK_KEY, url);
+    return (await kvGet(db, APP_WEBHOOK_KEY)) ?? url;
+  } catch {
+    return undefined; // best-effort: no buttons, fall back to the plain webhook
+  }
+}
+
+/**
+ * Webhook URLs that may have authored a results post, app-owned first: an edit
+ * or delete tries each (404 → next) so it works whether the post predates the
+ * app webhook (user webhook) or carries buttons (app webhook).
+ */
+export async function resultsWebhookCandidates(db: DB): Promise<string[]> {
+  const urls: string[] = [];
+  const app = await kvGet(db, APP_WEBHOOK_KEY);
+  if (app) urls.push(app);
+  if (config.discordResultsWebhookUrl && config.discordResultsWebhookUrl !== app)
+    urls.push(config.discordResultsWebhookUrl);
+  return urls;
+}
+
+/** The Void / Exclude action row for a results post, keyed by match id. */
+function matchButtons(matchId: string): object[] {
+  return [
+    {
+      type: 1, // action row
+      components: [
+        { type: 2, style: 4, label: "Void", custom_id: `void:${matchId}` }, // danger
+        { type: 2, style: 2, label: "Exclude", custom_id: `exclude:${matchId}` }, // secondary
+      ],
+    },
+  ];
+}
+
 const COMMANDS = [
   new SlashCommandBuilder()
     .setName("leaderboard")
@@ -804,17 +1109,36 @@ const COMMANDS = [
       o
         .setName("player")
         .setDescription("Gamertag or display name (partial works)")
-        .setRequired(false),
+        .setRequired(false)
+        .setAutocomplete(true),
     ),
   new SlashCommandBuilder()
     .setName("delete")
-    .setDescription("Void a game so it stops counting — give its #game-results message id or link")
+    .setDescription("Void a game so it stops counting — pick it or give its message id")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addStringOption((o) =>
       o
         .setName("game")
-        .setDescription("The #game-results message id (or its Copy Message Link URL)")
-        .setRequired(true),
+        .setDescription("Pick a recent game, or paste its #game-results message id / link")
+        .setRequired(true)
+        .setAutocomplete(true),
+    ),
+  new SlashCommandBuilder()
+    .setName("exclude")
+    .setDescription("Drop a game from the boards but keep its post (off-format) — pick it or give its id")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addStringOption((o) =>
+      o
+        .setName("game")
+        .setDescription("Pick a recent game, or paste its #game-results message id / link")
+        .setRequired(true)
+        .setAutocomplete(true),
+    )
+    .addBooleanOption((o) =>
+      o
+        .setName("restore")
+        .setDescription("Undo: count the game again (default false)")
+        .setRequired(false),
     ),
 ].map((c) => c.toJSON());
 
@@ -828,45 +1152,179 @@ export async function startBot(
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
   client.once("clientReady", async (c) => {
+    // Gateway is live the moment the ready event fires — surface that in the
+    // status bar before the (slower, fallible) command registration so a
+    // hang/throw there can't leave the footer stuck on "connecting".
+    statusBar.setBot("online");
+    console.log(`[discord] bot online as ${c.user.tag}`);
     const rest = new REST({ version: "10" }).setToken(token);
     if (guildId) {
       await rest.put(Routes.applicationGuildCommands(c.user.id, guildId), { body: COMMANDS });
     } else {
       await rest.put(Routes.applicationCommands(c.user.id), { body: COMMANDS });
     }
-    console.log(`[discord] bot online as ${c.user.tag}; commands registered`);
+    console.log("[discord] commands registered");
+    // Provision our own webhook in the results channel so per-match posts can
+    // carry the Void/Exclude buttons (plain webhooks strip components).
+    if (resultsWebhookUrl) {
+      const url = await ensureAppResultsWebhook(token, c.user.id, db);
+      if (url) console.log("[discord] results buttons enabled (app-owned webhook)");
+    }
+    startRecapScheduler(db);
   });
 
   client.on("interactionCreate", async (i) => {
-    if (!i.isChatInputCommand()) return;
-    const ix = i as ChatInputCommandInteraction;
     try {
+      if (i.isAutocomplete()) {
+        await handleAutocomplete(i, db);
+        return;
+      }
+      if (i.isButton()) {
+        await handleButton(i, db, leaderboardWebhookUrl);
+        return;
+      }
+      if (!i.isChatInputCommand()) return;
+      const ix = i;
       if (ix.commandName === "leaderboard") {
         const matches = await matchesChrono(db);
-        const png = await tryRenderCsrLeaderboard(matches);
+        const hidden = await hiddenXuids(db);
+        const png = await tryRenderCsrLeaderboard(matches, hidden);
         if (png) {
-          await ix.reply({ files: [{ attachment: png, name: "leaderboard.png" }] });
+          await ix.reply({
+            embeds: [leaderboardEmbed()],
+            files: [{ attachment: png, name: "leaderboard.png" }],
+          });
         } else {
-          await ix.reply(formatCsrLeaderboard(matches));
+          await ix.reply(formatCsrLeaderboard(matches, hidden));
         }
       } else if (ix.commandName === "stats") {
         const query = ix.options.getString("player");
         if (query) {
-          await ix.reply(formatCsrPlayerStats(await matchesChrono(db), query));
+          const { embed, content } = buildCsrPlayerStatsEmbed(await matchesChrono(db), query);
+          await ix.reply(embed ? { embeds: [embed] } : { content: content ?? "" });
         } else {
           await ix.reply(`📊 ${await matchCount(db)} tracked Halo 3 custom matches recorded.`);
         }
       } else if (ix.commandName === "delete") {
-        await handleDelete(ix, db, resultsWebhookUrl, leaderboardWebhookUrl);
+        await handleDelete(ix, db, leaderboardWebhookUrl);
+      } else if (ix.commandName === "exclude") {
+        await handleExclude(ix, db, leaderboardWebhookUrl);
       }
     } catch (e) {
-      console.error("[discord] command error:", e);
-      if (!ix.replied) await ix.reply("Something went wrong.").catch(() => {});
+      console.error("[discord] interaction error:", e);
+      if (i.isRepliable() && !i.replied && !i.deferred)
+        await i.reply({ content: "Something went wrong.", flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   });
 
   await client.login(token);
   return client;
+}
+
+/** Autocomplete: player names for /stats, recent games for /delete & /exclude. */
+async function handleAutocomplete(ix: AutocompleteInteraction, db: DB): Promise<void> {
+  const focused = ix.options.getFocused(true);
+  const q = String(focused.value ?? "").toLowerCase();
+  const matches = await matchesChrono(db);
+  if (focused.name === "player") {
+    const names = new Set<string>();
+    for (const m of matches) for (const p of m.players) if (p.xuid) names.add(displayName(p.gamertag));
+    const choices = [...names]
+      .filter((n) => n.toLowerCase().includes(q))
+      .slice(0, 25)
+      .map((n) => ({ name: n, value: n }));
+    await ix.respond(choices);
+    return;
+  }
+  if (focused.name === "game") {
+    const msgByMatch = new Map(
+      (await resultsRestyleTargets(db, 0, true)).map((t) => [t.matchId, t.msgId]),
+    );
+    const choices = matches
+      .filter((m) => msgByMatch.has(m.matchId))
+      .sort((a, b) => b.playedAt - a.playedAt)
+      .map((m) => ({ name: matchChoiceLabel(m), value: msgByMatch.get(m.matchId)! }))
+      .filter((ch) => ch.name.toLowerCase().includes(q))
+      .slice(0, 25);
+    await ix.respond(choices);
+    return;
+  }
+  await ix.respond([]);
+}
+
+/** A ≤100-char plain-text label for one match, for the /delete autocomplete list. */
+function matchChoiceLabel(m: StoredMatch): string {
+  const when = new Date(m.playedAt).toISOString().slice(0, 16).replace("T", " ");
+  const roster = [...m.players]
+    .sort((a, b) => a.teamId - b.teamId || a.standing - b.standing)
+    .map((p) => displayName(p.gamertag))
+    .join(", ");
+  const s = `${m.gameTypeName} (${categorize(m)}) — ${when} — ${roster}`;
+  return s.length > 100 ? s.slice(0, 97) + "…" : s;
+}
+
+/**
+ * Void / Exclude button click. Gated to Manage Server (component interactions
+ * carry no default_member_permissions, so we check manually). Operates on the
+ * post the button is attached to — always one of our app-webhook posts.
+ */
+async function handleButton(
+  ix: ButtonInteraction,
+  db: DB,
+  leaderboardWebhookUrl?: string,
+): Promise<void> {
+  if (!ix.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+    await ix.reply({
+      content: "You need the Manage Server permission to do that.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  const [action, matchId] = ix.customId.split(":");
+  const msgId = ix.message.id;
+  await ix.deferReply({ flags: MessageFlags.Ephemeral });
+  const reply =
+    action === "void"
+      ? await voidMatch(db, matchId, msgId, leaderboardWebhookUrl)
+      : await excludeMatch(db, matchId, msgId, false, leaderboardWebhookUrl);
+  await ix.editReply(reply);
+}
+
+/** Post the weekly recap on Sundays from 20:00 local, once per ISO week. */
+function startRecapScheduler(db: DB): void {
+  const url = config.discordResultsWebhookUrl;
+  if (!url) return;
+  const tick = async (): Promise<void> => {
+    try {
+      const now = new Date();
+      if (now.getDay() !== 0 || now.getHours() < 20) return; // Sunday evening
+      const embed = buildRecapEmbed(await matchesChrono(db));
+      if (!embed) return;
+      const weekKey = `recap:${now.getUTCFullYear()}-${isoWeek(now)}`;
+      if (!(await kvClaim(db, weekKey, now.toISOString()))) return; // already posted (any instance)
+      await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ embeds: [embed], allowed_mentions: { parse: [] } }),
+      });
+      console.log("[recap] posted weekly recap");
+    } catch (e) {
+      console.error("[recap] weekly recap failed:", (e as Error).message);
+    }
+  };
+  const timer = setInterval(() => void tick(), 60 * 60 * 1000);
+  timer.unref?.();
+  void tick();
+}
+
+/** ISO-8601 week number ("W01".."W53") of a date, for the recap dedupe key. */
+function isoWeek(d: Date): string {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+  return `W${String(week).padStart(2, "0")}`;
 }
 
 /**
@@ -877,34 +1335,126 @@ export async function startBot(
 async function handleDelete(
   ix: ChatInputCommandInteraction,
   db: DB,
-  resultsWebhookUrl?: string,
   leaderboardWebhookUrl?: string,
 ): Promise<void> {
   const msgId = extractMessageId(ix.options.getString("game", true));
   if (!msgId) {
-    await ix.reply("That doesn't look like a message id or link.");
+    await ix.reply({ content: "That doesn't look like a message id or link.", flags: MessageFlags.Ephemeral });
     return;
   }
-
   const matchId = await matchIdByResultsMsg(db, msgId);
   if (!matchId) {
-    await ix.reply(
-      "No tracked game found for that post — it may predate message tracking. " +
+    await ix.reply({
+      content:
+        "No tracked game found for that post — it may predate message tracking. " +
         "Use the `remove-match` CLI on the host for older games.",
-    );
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
+  await ix.deferReply({ flags: MessageFlags.Ephemeral });
+  await ix.editReply(await voidMatch(db, matchId, msgId, leaderboardWebhookUrl));
+}
 
+/**
+ * Void a match: drop it from the DB (CSR/leaderboard recompute from history),
+ * delete its #game-results post (trying each candidate webhook), refresh the
+ * live leaderboard, and force-restyle later posts in the background (a deleted
+ * game shifts every later CSR change). Returns the confirmation text. Shared by
+ * the `/delete` command and the Void button.
+ */
+async function voidMatch(
+  db: DB,
+  matchId: string,
+  msgId: string,
+  leaderboardWebhookUrl?: string,
+): Promise<string> {
   const target = (await matchesChrono(db)).find((m) => m.matchId === matchId);
   const summary = target ? matchSummary(target) : `match \`${matchId}\``;
 
   await deleteMatch(db, matchId);
-  if (resultsWebhookUrl) await deleteMessage(resultsWebhookUrl, msgId);
+  for (const url of await resultsWebhookCandidates(db)) await deleteMessage(url, msgId);
   try {
     await upsertCsrLeaderboard(leaderboardWebhookUrl, db);
   } catch (e) {
     console.error("[discord] leaderboard refresh after delete failed:", (e as Error).message);
   }
 
-  await ix.reply(`🗑️ Voided ${summary}. ${await matchCount(db)} matches remain.`);
+  // Detached, rate-limited re-style of later posts. Dynamic import avoids a
+  // heal.ts ↔ discord.ts import cycle.
+  void (async () => {
+    try {
+      const { healStaleResults } = await import("./heal.ts");
+      await healStaleResults(db, { force: true, log: (m) => console.log("[heal]", m) });
+    } catch (e) {
+      console.error("[discord] post-delete restyle failed:", (e as Error).message);
+    }
+  })();
+
+  return `🗑️ Voided ${summary}. ${await matchCount(db)} matches remain.`;
+}
+
+/**
+ * Exclude (or, with `restore`, re-include) a game referenced by its
+ * #game-results post: flip the match's excluded flag so it drops off / rejoins
+ * every board (CSR recomputes from history), re-style its post in place to the
+ * off-format / counted caption, and refresh the live leaderboard. Unlike
+ * `/delete`, the match and its post are kept. Gated to Manage Server.
+ */
+async function handleExclude(
+  ix: ChatInputCommandInteraction,
+  db: DB,
+  leaderboardWebhookUrl?: string,
+): Promise<void> {
+  const msgId = extractMessageId(ix.options.getString("game", true));
+  if (!msgId) {
+    await ix.reply({ content: "That doesn't look like a message id or link.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+  const restore = ix.options.getBoolean("restore") ?? false;
+  const matchId = await matchIdByResultsMsg(db, msgId);
+  if (!matchId) {
+    await ix.reply({
+      content:
+        "No tracked game found for that post — it may predate message tracking. " +
+        "Use the `exclude-match` CLI on the host for older games.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  await ix.deferReply({ flags: MessageFlags.Ephemeral });
+  await ix.editReply(await excludeMatch(db, matchId, msgId, restore, leaderboardWebhookUrl));
+}
+
+/**
+ * Exclude (or, with `restore`, re-include) a match: flip its excluded flag so it
+ * drops off / rejoins every board (CSR recomputes from history), re-style its
+ * post in place to the off-format / counted caption, and refresh the live
+ * leaderboard. The match + post are kept. Shared by `/exclude` and the button.
+ */
+async function excludeMatch(
+  db: DB,
+  matchId: string,
+  msgId: string,
+  restore: boolean,
+  leaderboardWebhookUrl?: string,
+): Promise<string> {
+  const target = (await matchesChrono(db)).find((m) => m.matchId === matchId);
+  const summary = target ? matchSummary(target) : `match \`${matchId}\``;
+
+  await setMatchExcluded(db, matchId, !restore);
+  try {
+    await restyleResultPost(db, matchId, msgId);
+  } catch (e) {
+    console.error("[discord] result re-style after exclude failed:", (e as Error).message);
+  }
+  try {
+    await upsertCsrLeaderboard(leaderboardWebhookUrl, db);
+  } catch (e) {
+    console.error("[discord] leaderboard refresh after exclude failed:", (e as Error).message);
+  }
+
+  return restore
+    ? `✅ Restored ${summary} — it counts toward the leaderboard again.`
+    : `🚫 Excluded ${summary} from the leaderboards (kept as an off-format post).`;
 }

@@ -6,7 +6,7 @@
 
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import type { EloChange } from "./elo.ts";
-import type { CsrChange } from "./trueskill2.ts";
+import type { CsrChange, MatchWinChances } from "./trueskill2.ts";
 import { csrFromSkill } from "./csr.ts";
 
 const p = (
@@ -112,6 +112,32 @@ export function sampleCsrChanges(r: CarnageReport): Map<string, CsrChange> {
       return [p.xuid, { skill, csr: csrFromSkill(skill), delta }];
     }),
   );
+}
+
+/** Plausible per-team win bar (avg CSR from the sample CSR changes) for previews. */
+export function sampleWinChances(r: CarnageReport): MatchWinChances | undefined {
+  if (!r.teamsEnabled || r.winningTeamId == null) return undefined;
+  const csr = sampleCsrChanges(r);
+  const agg = new Map<number, { sum: number; n: number }>();
+  for (const pl of r.players) {
+    const c = csr.get(pl.xuid);
+    if (!c) continue;
+    const a = agg.get(pl.teamId) ?? { sum: 0, n: 0 };
+    a.sum += c.csr.value;
+    a.n += 1;
+    agg.set(pl.teamId, a);
+  }
+  if (agg.size !== 2) return undefined;
+  const [idA, idB] = [...agg.keys()].sort((x, y) =>
+    x === r.winningTeamId ? -1 : y === r.winningTeamId ? 1 : x - y,
+  );
+  const avg = (id: number): number => Math.round(agg.get(id)!.sum / agg.get(id)!.n);
+  return {
+    teams: [
+      { teamId: idA, avgCsr: avg(idA), winProb: 0.55 },
+      { teamId: idB, avgCsr: avg(idB), winProb: 0.45 },
+    ],
+  };
 }
 
 export const sampleFfa: CarnageReport = {

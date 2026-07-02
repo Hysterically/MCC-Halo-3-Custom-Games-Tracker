@@ -8,7 +8,10 @@ automatically.
   kills, deaths) in the results channel.
 - **The live leaderboard** — one always-up-to-date standings post with separate
   **2v2 / 4v4 / FFA** rankings, updated after every game.
-- Type `/leaderboard` or `/stats` in Discord to check standings on demand.
+- Type `/leaderboard` or `/stats` in Discord to check standings on demand —
+  with name autocomplete, and answers shown as clean rich embeds.
+- **A weekly recap** posts on Sunday evenings: games played, most active player,
+  MVP, and the current category leaders.
 
 It works by reading the match report files MCC saves on your PC after each game.
 No logins, no passwords, nothing to sign up for — it never touches your
@@ -21,13 +24,15 @@ Microsoft or Xbox account.
 3. **Ask Hysterically for the group settings file (`.env`)** and drop it into
    that folder. This is what connects you to *our* shared leaderboard and
    Discord channels — it's sent privately, never posted publicly.
-4. Double-click **`Start.bat`**.
+4. Double-click **`Run-Tracker.bat`**.
 5. That's it. Leave the window open while you play customs; results appear in
    Discord on their own. Don't worry about doubling up — even if several of us
    run the tracker during the same game, each match is counted exactly once.
 
-**Requirements:** Windows 10/11 and Halo: MCC. Nothing to install — the zip is
-a single small program (~1 MB).
+**Requirements:** Windows 10/11 and Halo: MCC. The very first run sets itself
+up automatically (it installs Node.js and the tracker's packages — takes a
+minute or two, one time only). If it asks you to close the window and start
+again after that install, do that — it's normal.
 
 **Important:** the tracker only sees games that *your* PC played in. One person
 in the lobby running it is enough (the match report lists everyone), so
@@ -45,7 +50,9 @@ combined leaderboard.
   [turso.tech](https://turso.tech) and set `DB_URL=libsql://…` and
   `DB_AUTH_TOKEN=…` on every host's PC.
 - **`/leaderboard` and `/stats` commands:** set `DISCORD_BOT_TOKEN=…` and
-  `DISCORD_GUILD_ID=…` (the guild id makes the commands show up instantly).
+  `DISCORD_GUILD_ID=…` (the guild id makes the commands show up instantly). The
+  bot also adds **Void / Exclude buttons** under each result post (admins only)
+  and posts the weekly recap — no extra setup beyond the token.
 
 ---
 

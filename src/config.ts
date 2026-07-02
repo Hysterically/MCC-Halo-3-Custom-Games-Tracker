@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { config as loadEnv } from "dotenv";
 
-loadEnv();
+loadEnv({ quiet: true }); // no "injected env … // tip:" banner in the console
 
 const env = (k: string): string | undefined => {
   const v = process.env[k];

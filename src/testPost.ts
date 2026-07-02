@@ -9,13 +9,18 @@
 
 import { config } from "./config.ts";
 import { postCsrMatchResult } from "./discord.ts";
-import { sampleTeam, sampleCsrChanges } from "./sampleReports.ts";
+import { sampleTeam, sampleCsrChanges, sampleWinChances } from "./sampleReports.ts";
 
 if (!config.discordResultsWebhookUrl) {
   console.error("No DISCORD_RESULTS_WEBHOOK_URL in .env — nothing to post to.");
   process.exit(1);
 }
 
-await postCsrMatchResult(config.discordResultsWebhookUrl, sampleTeam, sampleCsrChanges(sampleTeam));
+await postCsrMatchResult(
+  config.discordResultsWebhookUrl,
+  sampleTeam,
+  sampleCsrChanges(sampleTeam),
+  sampleWinChances(sampleTeam),
+);
 console.log("Posted a sample carnage image to the results webhook.");
 console.log("(It is a fake match — delete the Discord message when done looking.)");

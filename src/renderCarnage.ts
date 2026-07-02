@@ -13,7 +13,7 @@
 import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
 import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 import type { EloChange } from "./elo.ts";
-import { type CsrChange } from "./trueskill2.ts";
+import { type CsrChange, type MatchWinChances } from "./trueskill2.ts";
 import { csrEmblems } from "./csrEmblems.ts";
 import { displayName } from "./aliases.ts";
 import { FONT, FONT_BOLD } from "./fonts.ts";
@@ -138,12 +138,123 @@ function ratingCenter(c: Col): number {
   return (c.x - 14 + (W - MARGIN)) / 2;
 }
 
-interface RenderOpts {
-  /** Centre the rating column's header over the column (vs left-aligned). */
-  centerRatingHeader?: boolean;
+/**
+ * Top-right win-probability bar: two rounded team-coloured pills whose split is
+ * each team's pre-match win chance, with end-cap initials and a
+ * "<Blue> 58%   Chances of Winning   42% <Red>" label row beneath — and, in the
+ * free space to the left of the bar, each team's average-CSR line. Drawn in the
+ * header band right of the headline; only present for rated 2-team matches (the
+ * caller passes `win` only then).
+ */
+const BAR_W = 290; // width of the probability bar
+const BAR_H = 14;
+const BAR_TOP = 44;
+const CAP_W = 16; // end-cap square
+
+/** Lighten a #rrggbb toward white (for the brighter end caps). */
+function lighten(hex: string, amt = 0.35): string {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.round(((n >> 16) & 255) + (255 - ((n >> 16) & 255)) * amt);
+  const g = Math.round(((n >> 8) & 255) + (255 - ((n >> 8) & 255)) * amt);
+  const b = Math.round((n & 255) + (255 - (n & 255)) * amt);
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
-function render(r: CarnageReport, cols: Col[], ratingCell?: RatingCell, opts: RenderOpts = {}): Buffer {
+function roundRect(ctx: SKRSContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+/** A bar segment rounded only on the chosen outer side; the inner (split) side
+ * stays square so the two team segments meet flush in the middle. */
+function pill(
+  ctx: SKRSContext2D, x: number, y: number, w: number, h: number, r: number,
+  roundLeft: boolean, roundRight: boolean,
+): void {
+  const rl = roundLeft ? Math.min(r, w / 2, h / 2) : 0;
+  const rr = roundRight ? Math.min(r, w / 2, h / 2) : 0;
+  ctx.beginPath();
+  ctx.moveTo(x + rl, y);
+  ctx.lineTo(x + w - rr, y);
+  if (rr) ctx.arcTo(x + w, y, x + w, y + h, rr);
+  else ctx.lineTo(x + w, y);
+  ctx.lineTo(x + w, y + h - rr);
+  if (rr) ctx.arcTo(x + w, y + h, x, y + h, rr);
+  else ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x + rl, y + h);
+  if (rl) ctx.arcTo(x, y + h, x, y, rl);
+  else ctx.lineTo(x, y + h);
+  ctx.lineTo(x, y + rl);
+  if (rl) ctx.arcTo(x, y, x + w, y, rl);
+  else ctx.lineTo(x, y);
+  ctx.closePath();
+}
+
+function drawWinBar(ctx: SKRSContext2D, win: MatchWinChances): void {
+  const [a, b] = win.teams;
+  const barRight = W - MARGIN;
+  const barLeft = barRight - BAR_W;
+  const split = barLeft + Math.round(BAR_W * a.winProb);
+  const r = BAR_H / 2;
+  const colA = TEAM_ROW_COLORS[a.teamId] ?? "#39434f";
+  const colB = TEAM_ROW_COLORS[b.teamId] ?? "#39434f";
+  const nameA = TEAM_NAMES[a.teamId] ?? "Team";
+  const nameB = TEAM_NAMES[b.teamId] ?? "Team";
+
+  // Average-CSR line above each team's segment.
+  ctx.font = `11px ${FONT}`;
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "left";
+  ctx.fillText(`${nameA} Team Average CSR: ${a.avgCsr}`, barLeft, BAR_TOP - 6);
+  ctx.textAlign = "right";
+  ctx.fillText(`${nameB} Team Average CSR: ${b.avgCsr}`, barRight, BAR_TOP - 6);
+
+  // Two segments (left = team a, right = team b) meeting flush at the split:
+  // outer ends rounded, inner ends square. A thin seam marks the boundary.
+  ctx.fillStyle = colA;
+  pill(ctx, barLeft, BAR_TOP, split - barLeft, BAR_H, r, true, false);
+  ctx.fill();
+  ctx.fillStyle = colB;
+  pill(ctx, split, BAR_TOP, barRight - split, BAR_H, r, false, true);
+  ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  ctx.fillRect(split - 1, BAR_TOP, 2, BAR_H);
+
+  // Brighter end caps with the team initial.
+  const cap = (x: number, color: string, letter: string): void => {
+    ctx.fillStyle = color;
+    roundRect(ctx, x, BAR_TOP - 1, CAP_W, BAR_H + 2, 5);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `10px ${FONT_BOLD}`;
+    ctx.textAlign = "center";
+    ctx.fillText(letter, x + CAP_W / 2, BAR_TOP + BAR_H / 2 + 4);
+  };
+  cap(barLeft, lighten(colA), nameA[0].toUpperCase());
+  cap(barRight - CAP_W, lighten(colB), nameB[0].toUpperCase());
+
+  // Label row beneath: "<Blue> 58%   Chances of Winning   42% <Red>".
+  const labelY = BAR_TOP + BAR_H + 14;
+  ctx.font = `11px ${FONT}`;
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(`${nameA} ${Math.round(a.winProb * 100)}%`, barLeft, labelY);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(`${Math.round(b.winProb * 100)}% ${nameB}`, barRight, labelY);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("Chances of Winning", (barLeft + barRight) / 2, labelY);
+  ctx.textAlign = "left";
+}
+
+function render(r: CarnageReport, cols: Col[], ratingCell?: RatingCell, win?: MatchWinChances): Buffer {
   const players = orderedPlayers(r);
   const height = ROWS_TOP + players.length * (ROW_H + ROW_GAP) - ROW_GAP + BOTTOM_PAD;
   const canvas = createCanvas(W, height);
@@ -167,18 +278,15 @@ function render(r: CarnageReport, cols: Col[], ratingCell?: RatingCell, opts: Re
   const subtitle = (r.gameTypeName || "CUSTOM GAME") + (r.mapName ? ` ON ${r.mapName}` : "");
   ctx.fillText(subtitle.toUpperCase(), MARGIN + titleW + 26, TITLE_BASELINE);
 
+  // Win-probability bar (top-right) — only for rated 2-team matches.
+  if (win) drawWinBar(ctx, win);
+
   // Column headers (light blue, like the in-game UI).
   ctx.font = `20px ${FONT}`;
   ctx.fillStyle = "#76b5d8";
   ctx.fillText("PLAYERS", MARGIN + 2, HEADER_BASELINE);
   for (const c of cols) {
-    if (c.stat < 0 && opts.centerRatingHeader) {
-      ctx.textAlign = "center";
-      ctx.fillText(c.label, ratingCenter(c), HEADER_BASELINE);
-      ctx.textAlign = "left";
-    } else {
-      ctx.fillText(c.label, c.x, HEADER_BASELINE);
-    }
+    ctx.fillText(c.label, c.x, HEADER_BASELINE);
   }
 
   // Rows.
@@ -224,6 +332,7 @@ const CSR_EMBLEM_H = 34;
 export async function renderCarnageCsrPng(
   r: CarnageReport,
   csrChanges?: Map<string, CsrChange>,
+  win?: MatchWinChances,
 ): Promise<Buffer> {
   const players = r.players;
   const hasCsr = csrChanges != null && players.some((p) => csrChanges.has(p.xuid));
@@ -244,7 +353,10 @@ export async function renderCarnageCsrPng(
     const mainText = String(ch.csr.value);
     const mainW = ctx.measureText(mainText).width;
     const deltaW = ctx.measureText(deltaText).width;
-    const img = emblems[ch.csr.emblem];
+    // A Champion (top 3 on the board who has cleared the floor — flagged by
+    // matchCsrChanges) wears the Champion insignia instead of their tier emblem.
+    const emblemKey = ch.champion ? "champion" : ch.csr.emblem;
+    const img = emblems[emblemKey];
     const ew = img ? (img.width / img.height) * CSR_EMBLEM_H : 0;
     const groupW = ew + (img ? gapE : 0) + mainW + gapD + deltaW;
     let x = ratingCenter(c) - groupW / 2;
@@ -259,7 +371,7 @@ export async function renderCarnageCsrPng(
     ctx.fillStyle = d > 0 ? "#7ed87e" : d < 0 ? "#e8837f" : "#c8cfd8";
     ctx.fillText(deltaText, x, mid);
   };
-  return render(r, hasCsr ? COLS_CSR : COLS, hasCsr ? cell : undefined, { centerRatingHeader: true });
+  return render(r, hasCsr ? COLS_CSR : COLS, hasCsr ? cell : undefined, win);
 }
 
 function drawRow(
