@@ -42,6 +42,22 @@ set(H3_SOURCES
   src/cli.cpp
 )
 
+# Version resource + manifest: identify the exe to Windows (and to Defender/
+# SmartScreen heuristics, which score unsigned metadata-less exes badly).
+# Numeric version parsed from H3_VERSION ("v1.2.3"); a "dev" build is 0.0.0.
+set(H3_VER_MAJOR 0)
+set(H3_VER_MINOR 0)
+set(H3_VER_PATCH 0)
+set(H3_VER_DISPLAY "dev")
+if(DEFINED H3_VERSION AND H3_VERSION MATCHES "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+  set(H3_VER_MAJOR ${CMAKE_MATCH_1})
+  set(H3_VER_MINOR ${CMAKE_MATCH_2})
+  set(H3_VER_PATCH ${CMAKE_MATCH_3})
+  set(H3_VER_DISPLAY "${H3_VERSION}")
+endif()
+configure_file(src/version.rc.in "${CMAKE_BINARY_DIR}/version.rc" @ONLY)
+list(APPEND H3_SOURCES "${CMAKE_BINARY_DIR}/version.rc" src/h3-tracker.manifest)
+
 add_executable(h3-tracker ${H3_SOURCES})
 target_include_directories(h3-tracker PRIVATE src)
 # Tells db.cpp / cli.cpp the real remote-DB and gateway backends are linked, so
