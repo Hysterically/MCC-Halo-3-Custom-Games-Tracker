@@ -12,7 +12,7 @@ echo   1. Node.js is installed - only if it's missing. Windows may show an
 echo      administrator prompt for its installer.
 echo   2. The tracker's packages are downloaded into the app folder.
 echo.
-echo Press any key to continue - or close this window to cancel.
+echo Press any key to start the setup - or close this window to cancel.
 pause >nul
 echo.
 
@@ -47,7 +47,8 @@ if errorlevel 1 (
   echo.
   echo [install] Package install failed - check your internet connection and
   echo           run Install.bat again.
-  pause
+  echo Press any key to close this window.
+  pause >nul
   exit /b 1
 )
 
@@ -72,7 +73,8 @@ echo.
 echo If there was no prompt or it failed some other way, install Node.js LTS
 echo yourself from https://nodejs.org and then run Install.bat again.
 echo.
-pause
+echo Press any key to close this window.
+pause >nul
 exit /b 1
 
 :node_not_visible
@@ -80,7 +82,8 @@ echo.
 echo [install] Node.js finished installing, but this window can't see it yet.
 echo           Close this window and run Install.bat again to finish the setup.
 echo.
-pause
+echo Press any key to close this window.
+pause >nul
 exit /b 1
 
 rem Find a Node.js install this window's PATH doesn't know about yet: the
