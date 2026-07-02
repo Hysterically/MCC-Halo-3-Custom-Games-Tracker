@@ -42,7 +42,8 @@ echo   1. Double-click Install.bat - it's in this folder. It installs Node.js
 echo      and the tracker's packages, and takes about a minute.
 echo   2. Then double-click Run-Tracker.bat again.
 echo.
-pause
+echo Press any key to close this window.
+pause >nul
 exit /b 1
 
 :no_packages
@@ -55,7 +56,8 @@ echo   1. Double-click Install.bat - it's in this folder. Since Node.js is
 echo      already installed, this only takes a moment.
 echo   2. Then double-click Run-Tracker.bat again.
 echo.
-pause
+echo Press any key to close this window.
+pause >nul
 exit /b 1
 
 rem Find a Node.js install this window's PATH doesn't know about yet: the
