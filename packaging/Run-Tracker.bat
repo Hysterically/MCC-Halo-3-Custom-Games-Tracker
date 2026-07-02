@@ -20,11 +20,11 @@ rem Node.js may be installed but not on this window's PATH yet.
 where node >nul 2>nul
 if not errorlevel 1 goto node_ok
 call :find_node
-if not defined NODE_DIR goto not_installed
+if not defined NODE_DIR goto no_node
 set "PATH=%NODE_DIR%;%PATH%"
 :node_ok
 
-if not exist node_modules goto not_installed
+if not exist node_modules goto no_packages
 
 call npx tsx src/watch.ts
 echo.
@@ -32,10 +32,28 @@ echo Tracker stopped. Press any key to close this window.
 pause >nul
 exit /b 0
 
-:not_installed
+:no_node
 echo.
-echo The tracker isn't installed on this PC yet.
-echo Double-click Install.bat - it's next to this file - then come back here.
+echo Can't start: Node.js is not installed on this PC.
+echo Node.js is the program the tracker runs on - without it nothing can run.
+echo This launcher never installs things itself, so:
+echo.
+echo   1. Double-click Install.bat - it's in this folder. It installs Node.js
+echo      and the tracker's packages, and takes about a minute.
+echo   2. Then double-click Run-Tracker.bat again.
+echo.
+pause
+exit /b 1
+
+:no_packages
+echo.
+echo Can't start: the tracker's packages are missing from this folder.
+echo That's normal if this is a fresh download - the packages aren't part of
+echo the .zip, they get downloaded once by the installer. So:
+echo.
+echo   1. Double-click Install.bat - it's in this folder. Since Node.js is
+echo      already installed, this only takes a moment.
+echo   2. Then double-click Run-Tracker.bat again.
 echo.
 pause
 exit /b 1
