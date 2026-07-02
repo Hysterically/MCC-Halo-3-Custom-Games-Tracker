@@ -57,7 +57,10 @@ banner("Halo 3 Customs Tracker", [
   ["Watching", config.carnageDir],
   ["Results", config.discordResultsWebhookUrl ? c.green("on") : c.dim("off")],
   ["Leaderboard", config.discordLeaderboardWebhookUrl ? c.green("on") : c.dim("off")],
-  ["Bot", config.discordBotToken ? c.green("on") : c.dim("off")],
+  // No-token installs (the friends' zip) don't run the bot on purpose — the
+  // host's instance serves /leaderboard for everyone. Omit the row entirely
+  // rather than print an "off" that reads like a failure.
+  ...(config.discordBotToken ? [["Bot", c.green("on")] as [string, string]] : []),
   ["Matches", `${startCount} recorded`],
 ]);
 
