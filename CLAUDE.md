@@ -1,20 +1,27 @@
 # CLAUDE.md
 
 Halo 3 (MCC) custom-games tracker: watches the local `mpcarnagereport*.xml` files,
-records matches, computes ELO, and posts a leaderboard + per-match results to Discord.
+records matches, computes ELO + TrueSkill 2 CSR, and posts a leaderboard +
+per-match results to Discord.
 
-## Two implementations, kept at parity
+## One implementation: TypeScript
 
-- **`src/`** — TypeScript (run with `tsx`, e.g. `npm run watch`). Easiest to iterate.
-- **`cpp/`** — native C++ port. **This is the sole distribution artifact** (the `.exe`
-  shipped to users). The retired Node `dist` path is gone.
+- **`src/`** — the tracker, run with `tsx` (e.g. `npm run watch`). This is both
+  the live install (runs from source at the repo root) AND what ships to users.
+- The former native C++ port (`cpp/`) was removed 2026-07-02; the TS source zip
+  is now the sole distribution artifact. There is no parity requirement anymore.
 
-**Every behavioural change must land in BOTH `src/` and `cpp/` and stay equivalent.**
-Mirror the logic, the SQL schema/migrations, and the Discord command set in both.
+Type-check before shipping: `npm run typecheck`.
 
-Type-check / build before shipping:
-- TS: `npm run typecheck`
-- C++: `cpp\build.bat` (MSVC + vcpkg static → `cpp\build\bin\h3-tracker.exe`)
+## Distribution
+
+`bundle.bat vX.Y.Z` (repo root) stages `src/` + `package.json` +
+`package-lock.json` + `tsconfig.json` + `packaging/` (Start.bat / Setup.bat /
+README.txt / neutral aliases.json) + `version.txt` into
+`dist\h3-tracker-windows.zip`. The zip is self-bootstrapping: `Start.bat`
+installs Node.js via winget and runs `npm install` on first run, then
+`npx tsx src/watch.ts`. `version.txt` feeds `H3_VERSION` for the
+outdated-build check (`src/updateCheck.ts`).
 
 ## MANDATORY: publish a release after every update
 
@@ -23,7 +30,7 @@ README download link and the friends' Discord channel stay in sync — do not co
 the work done until both are updated:
 
 1. **GitHub release** (repo `Hysterically/MCC-Halo-3-Custom-Games-Tracker`).
-   - Build the zip: `cpp\bundle.bat` → `cpp\dist\h3-tracker-windows.zip`.
+   - Build the zip: `bundle.bat vX.Y.Z` → `dist\h3-tracker-windows.zip`.
    - Bump the version tag `vX.Y.Z` (the git tag IS the version — no in-source string).
      Latest is on the GitHub `releases/latest` endpoint.
    - Create the release and upload the asset named EXACTLY `h3-tracker-windows.zip`
