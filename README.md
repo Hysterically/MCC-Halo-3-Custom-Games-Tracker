@@ -24,7 +24,7 @@ Microsoft or Xbox account.
 3. **Ask Hysterically for the group settings file (`.env`)** and drop it into
    that folder. This is what connects you to *our* shared leaderboard and
    Discord channels — it's sent privately, never posted publicly.
-4. Double-click **`Start.bat`**.
+4. Double-click **`Run-Tracker.bat`**.
 5. That's it. Leave the window open while you play customs; results appear in
    Discord on their own. Don't worry about doubling up — even if several of us
    run the tracker during the same game, each match is counted exactly once.

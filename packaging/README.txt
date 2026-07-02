@@ -10,10 +10,10 @@ a match, it feeds the same standings.
 
 Quick start - joining the group's shared leaderboard
 ----------------------------------------------------
-1. Put the group's settings file (.env) next to Start.bat. Ask the person who
+1. Put the group's settings file (.env) next to Run-Tracker.bat. Ask the person who
    runs the leaderboard for it - it's shared privately (a Discord DM is fine),
    never posted publicly.
-2. Double-click  Start.bat
+2. Double-click  Run-Tracker.bat
    The very first run sets itself up (installs Node.js and the tracker's
    packages automatically - takes a minute or two, one time only). If it asks
    you to close the window and start again, do that - it's normal right after
@@ -24,7 +24,7 @@ Quick start - joining the group's shared leaderboard
 
 Quick start - setting up your own, separate leaderboard
 -------------------------------------------------------
-1. Double-click  Start.bat  (with no .env in the folder).
+1. Double-click  Run-Tracker.bat  (with no .env in the folder).
 2. It asks for two Discord "webhook" URLs (and explains how to make them in
    Discord):
      - one for a #game-results channel (a summary after every match)
@@ -37,7 +37,7 @@ To change your Discord settings later, double-click  Setup.bat
 Updating to a new version
 -------------------------
 Easiest way: download the latest .zip and extract it over your existing
-folder, keeping your .env (your settings). Then double-click Start.bat. Your
+folder, keeping your .env (your settings). Then double-click Run-Tracker.bat. Your
 ranks rebuild from match history automatically.
 
 Where your matches are saved
@@ -49,7 +49,7 @@ everyone. Without a DB_URL, matches are saved to a local file on this PC
 
 Files in this folder
 --------------------
-  Start.bat        run the tracker (first run also installs what it needs)
+  Run-Tracker.bat  run the tracker (first run also installs what it needs)
   Setup.bat        re-run the Discord setup
   README.txt       this file
   app\             the tracker itself - you never need to open this folder
