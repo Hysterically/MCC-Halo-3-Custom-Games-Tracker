@@ -18,16 +18,23 @@ const isTTY = Boolean(process.stdout.isTTY) && process.env.NO_COLOR === undefine
 const ESC = "\x1b[";
 const sgr = (code: string, s: string): string => (isTTY ? `${ESC}${code}m${s}${ESC}0m` : s);
 
-/** Minimal ANSI palette — no-ops when not a TTY. */
+/**
+ * Minimal ANSI palette — no-ops when not a TTY.
+ *
+ * `dim` and `gray` are deliberately plain: SGR 2 / bright-black render nearly
+ * unreadable on Windows Terminal dark themes (user feedback 2026-07-02), so
+ * "de-emphasized" text is just normal text — hierarchy comes from the accent
+ * colors, not from darkening.
+ */
 export const c = {
-  dim: (s: string) => sgr("2", s),
+  dim: (s: string) => s,
   bold: (s: string) => sgr("1", s),
   red: (s: string) => sgr("31", s),
   green: (s: string) => sgr("32", s),
   yellow: (s: string) => sgr("33", s),
   blue: (s: string) => sgr("34", s),
   cyan: (s: string) => sgr("36", s),
-  gray: (s: string) => sgr("90", s),
+  gray: (s: string) => s,
 };
 
 /** Color for a known `[tag]` prefix; gray for anything unrecognized. */
