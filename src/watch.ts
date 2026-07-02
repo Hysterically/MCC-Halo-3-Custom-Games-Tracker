@@ -108,9 +108,11 @@ const footerLabel = (r: CarnageReport): string =>
   `${r.gameTypeName}${r.mapName ? ` on ${r.mapName}` : ""} — ${r.winners[0] ?? "—"}`;
 
 /**
- * The console match block: a colored header line + winner + per-player CSR
- * changes (gains green, losses red, biggest first — same data the Discord post
- * shows). Colors are no-ops off a TTY, so a redirected log stays plain text.
+ * The console match block: a colored header line + winner, then one aligned
+ * row per rated player (biggest CSR gain first — same data the Discord post
+ * shows): name, K/D, CSR change, new rank. Pad BEFORE coloring so the ANSI
+ * codes don't break the column math; colors are no-ops off a TTY, so a
+ * redirected log stays plain text.
  */
 function matchBlock(r: CarnageReport, changes: Map<string, CsrChange> | null): string {
   const cat = CATEGORY_LABEL[categorize(r)];
@@ -122,12 +124,15 @@ function matchBlock(r: CarnageReport, changes: Map<string, CsrChange> | null): s
   if (changes?.size) {
     const rated = r.players.filter((p) => changes.has(p.xuid));
     rated.sort((a, b) => changes.get(b.xuid)!.delta - changes.get(a.xuid)!.delta);
-    const parts = rated.map((p) => {
+    const nameW = Math.max(...rated.map((p) => displayName(p.gamertag).length));
+    for (const p of rated) {
       const ch = changes.get(p.xuid)!;
-      const delta = ch.delta >= 0 ? c.green(`+${ch.delta}`) : c.red(`${ch.delta}`);
-      return `${displayName(p.gamertag)} ${delta} (${csrText(ch.csr)})`;
-    });
-    lines.push(`        CSR: ${parts.join(" · ")}`);
+      const name = displayName(p.gamertag).padEnd(nameW);
+      const kd = `${p.kills ?? 0}/${p.deaths ?? 0}`.padStart(5);
+      const delta = `${ch.delta >= 0 ? "+" : ""}${ch.delta}`.padStart(5);
+      const paintedDelta = ch.delta >= 0 ? c.green(delta) : c.red(delta);
+      lines.push(`          ${name}  ${c.dim(kd)}  ${paintedDelta}  ${csrText(ch.csr)}`);
+    }
   }
   return lines.join("\n");
 }
