@@ -10,7 +10,7 @@ a match, it feeds the same standings.
 
 Quick start - joining the group's shared leaderboard
 ----------------------------------------------------
-1. Put the group's settings file (.env) into this folder. Ask the person who
+1. Put the group's settings file (.env) next to Start.bat. Ask the person who
    runs the leaderboard for it - it's shared privately (a Discord DM is fine),
    never posted publicly.
 2. Double-click  Start.bat
@@ -45,19 +45,16 @@ Where your matches are saved
 If your .env points at the group's shared online database (DB_URL=...), every
 match is recorded there - that's what makes it one combined leaderboard for
 everyone. Without a DB_URL, matches are saved to a local file on this PC
-(data\h3.db) and you get your own standalone leaderboard.
+(app\data\h3.db) and you get your own standalone leaderboard.
 
 Files in this folder
 --------------------
-  src\             the tracker itself (runs directly from source)
   Start.bat        run the tracker (first run also installs what it needs)
   Setup.bat        re-run the Discord setup
   README.txt       this file
-  aliases.json     optional: change how player names appear on the leaderboard
-  version.txt      the version you're running
-  .env             your settings (from the group, or created on first run)
-  data\h3.db       local match history (only used without a shared database)
-  node_modules\    created by the first run - the tracker's packages
+  app\             the tracker itself - you never need to open this folder
+                   (source code, settings (.env), version, local match
+                   history, and the packages the first run installs)
 
 Requirements: Windows 10 or 11. Node.js is installed automatically on first
 run (or grab it yourself from https://nodejs.org if the automatic install
