@@ -29,8 +29,10 @@ Microsoft or Xbox account.
    Discord on their own. Don't worry about doubling up — even if several of us
    run the tracker during the same game, each match is counted exactly once.
 
-**Requirements:** Windows 10/11 and Halo: MCC. Nothing to install — the zip is
-a single small program (~1 MB).
+**Requirements:** Windows 10/11 and Halo: MCC. The very first run sets itself
+up automatically (it installs Node.js and the tracker's packages — takes a
+minute or two, one time only). If it asks you to close the window and start
+again after that install, do that — it's normal.
 
 **Important:** the tracker only sees games that *your* PC played in. One person
 in the lobby running it is enough (the match report lists everyone), so
