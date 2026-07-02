@@ -24,6 +24,9 @@ if exist "%STAGE%" rmdir /s /q "%STAGE%"
 mkdir "%STAGE%" "%STAGE%\app"
 
 xcopy /e /i /q "%HERE%src"           "%STAGE%\app\src" >nul
+rem Renderer images/fonts - loaded from app\src\..\assets at runtime; the
+rem leaderboard/result PNGs silently fall back to text without them.
+xcopy /e /i /q "%HERE%assets"        "%STAGE%\app\assets" >nul
 copy /y "%HERE%package.json"         "%STAGE%\app\" >nul
 copy /y "%HERE%package-lock.json"    "%STAGE%\app\" >nul
 copy /y "%HERE%tsconfig.json"        "%STAGE%\app\" >nul
