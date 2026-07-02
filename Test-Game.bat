@@ -13,8 +13,10 @@ rem for a theater film that never arrives in the sandbox, then gives up.
 
 cd /d "%~dp0"
 
-set "SB=%TEMP%\h3-fake-test"
-if exist "%SB%" rmdir /s /q "%SB%"
+rem Unique sandbox per run so two test windows can never race each other;
+rem old sandboxes are swept best-effort (in-use ones just stay until reboot).
+for /d %%d in ("%TEMP%\h3-fake-test-*") do rmdir /s /q "%%d" 2>nul
+set "SB=%TEMP%\h3-fake-test-%RANDOM%"
 mkdir "%SB%\mcc"
 
 rem Pick the report to replay: the file you passed, else your newest real one.
