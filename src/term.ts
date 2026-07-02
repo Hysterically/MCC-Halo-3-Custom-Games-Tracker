@@ -244,17 +244,38 @@ function paint(x: unknown, force?: (s: string) => string): unknown {
 
 export const statusBar = new StatusBar();
 
+/** Visible width of a string: length with any ANSI color codes stripped. */
+const visibleLen = (s: string): number => s.replace(/\x1b\[[0-9;]*m/g, "").length;
+
+/** Pad a (possibly colored) string to a visible width. */
+const padVis = (s: string, w: number): string => s + " ".repeat(Math.max(0, w - visibleLen(s)));
+
 /**
- * Print a startup panel: a title between two rules, then aligned label/value
- * rows. No side borders — color codes throw off width math, and a plain rule
- * stays aligned regardless. Mirrors the update-check notice style.
+ * Print the startup panel as a proper box: title row, separator, then aligned
+ * label/value rows. Values may be pre-colored — cells are padded by their
+ * VISIBLE width (ANSI codes stripped for the math), so the borders line up.
  */
 export function banner(title: string, rows: [string, string][]): void {
   const labelW = Math.max(...rows.map(([l]) => l.length));
-  const width = Math.max(title.length, ...rows.map(([l, v]) => labelW + v.length + 3)) + 1;
-  const rule = "─".repeat(width);
-  const body = rows.map(([l, v]) => ` ${c.gray(l.padEnd(labelW))}  ${v}`);
-  console.log([rule, ` ${c.bold(c.cyan(title))}`, rule, ...body, rule].join("\n"));
+  // Cap the box to the terminal width; too-long values (usually paths) keep
+  // their tail — the end of a path is the informative part.
+  const maxInner = Math.max(40, (process.stdout.columns ?? 100) - 4);
+  const valueW = maxInner - labelW - 2;
+  // (only plain values are truncated — slicing a colored one would cut codes)
+  rows = rows.map(([l, v]) =>
+    visibleLen(v) > valueW && visibleLen(v) === v.length ? [l, `…${v.slice(-(valueW - 1))}`] : [l, v],
+  );
+  const innerW = Math.min(
+    maxInner,
+    Math.max(title.length, ...rows.map(([, v]) => labelW + 2 + visibleLen(v))),
+  );
+  const top = c.gray(`┌─${"─".repeat(innerW)}─┐`);
+  const mid = c.gray(`├─${"─".repeat(innerW)}─┤`);
+  const bot = c.gray(`└─${"─".repeat(innerW)}─┘`);
+  const bar = c.gray("│");
+  const line = (s: string): string => `${bar} ${padVis(s, innerW)} ${bar}`;
+  const body = rows.map(([l, v]) => line(`${c.gray(l.padEnd(labelW))}  ${v}`));
+  console.log([top, line(c.bold(c.cyan(title))), mid, ...body, bot].join("\n"));
 }
 
 /** Print a short dim usage hint below the banner (one indented line each). */

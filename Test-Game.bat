@@ -42,15 +42,15 @@ set "DISCORD_WEBHOOK_URL= "
 set "DISCORD_BOT_TOKEN= "
 set "MCC_CARNAGE_DIR=%SB%\mcc"
 
-echo [test] Discord OFF - shared DB OFF - scratch DB: %SB%\h3.db
-echo [test] fake game: %REPORT%
+echo [test] sandbox test - Discord OFF, shared DB OFF
+echo [test] replaying: %REPORT%
 echo.
 
 rem Drop the fake game in after the watcher has gone live (it ignores files
 rem already present at startup). powershell avoids start/b's quote-mangling
 rem of paths with spaces.
-start "" /b powershell -NoProfile -Command "Start-Sleep 12; Copy-Item -LiteralPath '%REPORT%' -Destination '%SB%\mcc'; Write-Host ''; Write-Host '[test] fake game dropped in - the match should print above in ~45s (map lookup times out first)...'"
-call npm run watch
+start "" /b powershell -NoProfile -Command "Start-Sleep 12; Copy-Item -LiteralPath '%REPORT%' -Destination '%SB%\mcc'; Write-Host '[test] fake game dropped in - the match table prints in ~45s (map lookup must time out first)'"
+call npm run -s watch
 echo.
 echo [test] tracker stopped.
 pause
