@@ -108,32 +108,74 @@ const footerLabel = (r: CarnageReport): string =>
   `${r.gameTypeName}${r.mapName ? ` on ${r.mapName}` : ""} — ${r.winners[0] ?? "—"}`;
 
 /**
- * The console match block: a colored header line + winner, then one aligned
- * row per rated player (biggest CSR gain first — same data the Discord post
- * shows): name, K/D, CSR change, new rank. Pad BEFORE coloring so the ANSI
- * codes don't break the column math; colors are no-ops off a TTY, so a
- * redirected log stays plain text.
+ * The console match block: a colored header line, then a box-drawn table of
+ * the rated players (biggest CSR gain first — same data the Discord post
+ * shows): name (winners starred), K/D, CSR change, new rank. All cells are
+ * padded with PLAIN strings first and colorized after, so the ANSI codes
+ * never break the column math; colors are no-ops off a TTY, so a redirected
+ * log stays plain text.
  */
 function matchBlock(r: CarnageReport, changes: Map<string, CsrChange> | null): string {
   const cat = CATEGORY_LABEL[categorize(r)];
-  const head = `[match] ${r.gameTypeName}${r.mapName ? ` on ${r.mapName}` : ""} · ${cat} · ${
-    r.players.length
-  } players`;
-  const winners = r.winners.map(displayName).join(", ") || "—";
-  const lines = [head, `        winner: ${winners}`];
-  if (changes?.size) {
-    const rated = r.players.filter((p) => changes.has(p.xuid));
-    rated.sort((a, b) => changes.get(b.xuid)!.delta - changes.get(a.xuid)!.delta);
-    const nameW = Math.max(...rated.map((p) => displayName(p.gamertag).length));
-    for (const p of rated) {
-      const ch = changes.get(p.xuid)!;
-      const name = displayName(p.gamertag).padEnd(nameW);
-      const kd = `${p.kills ?? 0}/${p.deaths ?? 0}`.padStart(5);
-      const delta = `${ch.delta >= 0 ? "+" : ""}${ch.delta}`.padStart(5);
-      const paintedDelta = ch.delta >= 0 ? c.green(delta) : c.red(delta);
-      lines.push(`          ${name}  ${c.dim(kd)}  ${paintedDelta}  ${csrText(ch.csr)}`);
-    }
+  const head = `[match] ${c.bold(r.gameTypeName)}${r.mapName ? ` on ${r.mapName}` : ""} · ${cat}${c.dim(
+    ` · ${r.players.length} players`,
+  )}`;
+  const winnerNames = r.winners.map(displayName).join(", ") || "—";
+
+  const rated = changes?.size ? r.players.filter((p) => changes.has(p.xuid)) : [];
+  if (!rated.length) return [head, `        winner: ${winnerNames}`].join("\n");
+
+  const winners = new Set(r.winners);
+  rated.sort((a, b) => changes!.get(b.xuid)!.delta - changes!.get(a.xuid)!.delta);
+  const rows = rated.map((p) => {
+    const ch = changes!.get(p.xuid)!;
+    return {
+      name: displayName(p.gamertag) + (winners.has(p.gamertag) ? " ★" : ""),
+      won: winners.has(p.gamertag),
+      kd: `${p.kills ?? 0}/${p.deaths ?? 0}`,
+      delta: `${ch.delta >= 0 ? "+" : ""}${ch.delta}`,
+      gain: ch.delta >= 0,
+      rank: csrText(ch.csr),
+    };
+  });
+
+  const HDR = { name: "Player", kd: "K/D", delta: "CSR", rank: "Rank" };
+  const w = {
+    name: Math.max(HDR.name.length, ...rows.map((x) => x.name.length)),
+    kd: Math.max(HDR.kd.length, ...rows.map((x) => x.kd.length)),
+    delta: Math.max(HDR.delta.length, ...rows.map((x) => x.delta.length)),
+    rank: Math.max(HDR.rank.length, ...rows.map((x) => x.rank.length)),
+  };
+
+  const IND = "        ";
+  const rule = (l: string, m: string, rgt: string): string =>
+    c.gray(
+      `${IND}${l}${"─".repeat(w.name + 2)}${m}${"─".repeat(w.kd + 2)}${m}${"─".repeat(
+        w.delta + 2,
+      )}${m}${"─".repeat(w.rank + 2)}${rgt}`,
+    );
+  const bar = c.gray("│");
+  const row = (name: string, kd: string, delta: string, rank: string): string =>
+    `${IND}${bar} ${name} ${bar} ${kd} ${bar} ${delta} ${bar} ${rank} ${bar}`;
+
+  const lines = [head];
+  lines.push(rule("┌", "┬", "┐"));
+  lines.push(
+    row(
+      c.gray(HDR.name.padEnd(w.name)),
+      c.gray(HDR.kd.padStart(w.kd)),
+      c.gray(HDR.delta.padStart(w.delta)),
+      c.gray(HDR.rank.padEnd(w.rank)),
+    ),
+  );
+  lines.push(rule("├", "┼", "┤"));
+  for (const x of rows) {
+    const name = x.name.padEnd(w.name).replace("★", c.yellow("★"));
+    const kd = c.dim(x.kd.padStart(w.kd));
+    const delta = (x.gain ? c.green : c.red)(x.delta.padStart(w.delta));
+    lines.push(row(name, kd, delta, x.rank.padEnd(w.rank)));
   }
+  lines.push(rule("└", "┴", "┘"));
   return lines.join("\n");
 }
 
