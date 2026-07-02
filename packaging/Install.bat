@@ -30,23 +30,13 @@ if defined NODE_DIR set "PATH=%NODE_DIR%;%PATH%"
 if defined NODE_DIR goto node_ok
 echo [install] Installing Node.js - about a minute...
 winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-source-agreements
-if errorlevel 1 (
-  echo.
-  echo [install] Automatic install failed. Please install Node.js LTS yourself
-  echo           from https://nodejs.org and then run Install.bat again.
-  pause
-  exit /b 1
-)
+rem winget's failure codes are 0x8A15xxxx values, NEGATIVE as signed ints, so
+rem "if errorlevel 1" misses them - compare the exact value instead.
+if not "%errorlevel%"=="0" goto node_install_failed
 call :find_node
 if defined NODE_DIR set "PATH=%NODE_DIR%;%PATH%"
 where node >nul 2>nul
-if errorlevel 1 (
-  echo.
-  echo [install] Node.js was installed but needs a fresh window to be picked
-  echo           up. Close this window and run Install.bat again.
-  pause
-  exit /b 1
-)
+if errorlevel 1 goto node_not_visible
 :node_ok
 echo [install] Node.js: OK
 
@@ -70,6 +60,28 @@ echo.
 echo Tracker stopped. Press any key to close this window.
 pause >nul
 exit /b 0
+
+:node_install_failed
+echo.
+echo [install] Node.js did NOT get installed.
+echo.
+echo If Windows showed an administrator prompt and you clicked No, that's
+echo why - the installer needs that permission. Run Install.bat again and
+echo choose Yes on the prompt.
+echo.
+echo If there was no prompt or it failed some other way, install Node.js LTS
+echo yourself from https://nodejs.org and then run Install.bat again.
+echo.
+pause
+exit /b 1
+
+:node_not_visible
+echo.
+echo [install] Node.js finished installing, but this window can't see it yet.
+echo           Close this window and run Install.bat again to finish the setup.
+echo.
+pause
+exit /b 1
 
 rem Find a Node.js install this window's PATH doesn't know about yet: the
 rem machine-wide MSI location and winget's per-user location. Sets NODE_DIR.
