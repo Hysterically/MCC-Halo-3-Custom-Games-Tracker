@@ -35,6 +35,10 @@ copy /y "%HERE%packaging\aliases.json" "%STAGE%\app\" >nul
 copy /y "%HERE%packaging\Run-Tracker.bat"  "%STAGE%\" >nul
 copy /y "%HERE%packaging\Setup.bat"  "%STAGE%\" >nul
 copy /y "%HERE%packaging\README.txt" "%STAGE%\" >nul
+rem Force CRLF line endings on the staged launchers: cmd can fail to find
+rem "call :label" targets in LF-ended batch files - shipped broken in v2.0.x
+rem when the working tree had LF bats.
+powershell -NoProfile -Command "Get-ChildItem -Path '%STAGE%' -Filter *.bat | ForEach-Object { Set-Content -Path $_.FullName -Value (Get-Content $_.FullName) -Encoding ascii }"
 
 rem tar.exe (bsdtar, built into Windows 10+) writes standard forward-slash
 rem zip entries; Compress-Archive would write backslashes, which some
