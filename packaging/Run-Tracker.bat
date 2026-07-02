@@ -5,8 +5,8 @@ rem missing, then starts. After that it starts straight away.
 rem The tracker itself lives in app\ - this launcher is all you touch.
 title Halo 3 Customs Tracker
 
-rem A .env dropped next to Start.bat is moved into app\ (where the tracker
-rem reads it from), so "put the settings file next to Start.bat" just works.
+rem A .env dropped next to Run-Tracker.bat is moved into app\ (where the tracker
+rem reads it from), so "put the settings file next to Run-Tracker.bat" just works.
 if exist "%~dp0.env" move /y "%~dp0.env" "%~dp0app\.env" >nul
 
 rem cd pins .env/data lookups to the app folder even if launched elevated.
@@ -27,7 +27,7 @@ winget install --id OpenJS.NodeJS.LTS -e --accept-package-agreements --accept-so
 if errorlevel 1 (
   echo.
   echo [setup] Automatic install failed. Please install Node.js LTS yourself
-  echo         from https://nodejs.org and then double-click Start.bat again.
+  echo         from https://nodejs.org and then double-click Run-Tracker.bat again.
   pause
   exit /b 1
 )
@@ -36,7 +36,7 @@ where node >nul 2>nul
 if errorlevel 1 (
   echo.
   echo [setup] Node.js was installed but needs a fresh window to be picked up.
-  echo         Please close this window and double-click Start.bat again.
+  echo         Please close this window and double-click Run-Tracker.bat again.
   pause
   exit /b 1
 )
@@ -49,7 +49,7 @@ if not exist node_modules (
   if errorlevel 1 (
     echo.
     echo [setup] Package install failed - check your internet connection and
-    echo         double-click Start.bat again.
+    echo         double-click Run-Tracker.bat again.
     pause
     exit /b 1
   )
