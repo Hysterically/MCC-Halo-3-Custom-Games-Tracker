@@ -13,32 +13,32 @@ Quick start - joining the group's shared leaderboard
 1. Put the group's settings file (.env) next to Run-Tracker.bat. Ask the person who
    runs the leaderboard for it - it's shared privately (a Discord DM is fine),
    never posted publicly.
-2. Double-click  Run-Tracker.bat
-   The very first run sets itself up (installs Node.js and the tracker's
-   packages automatically - takes a minute or two, one time only). If it asks
-   you to close the window and start again, do that - it's normal right after
-   the Node.js install.
-3. Leave the window open while you play. New matches show up on their own.
-   It's fine if several people run the tracker during the same game - every
-   match is counted exactly once.
+2. Double-click  Install.bat  - one time only. It tells you what it's about
+   to set up (Node.js if missing, plus the tracker's packages), takes a
+   minute or two, and can start the tracker for you when it's done.
+3. From then on, double-click  Run-Tracker.bat  and leave the window open
+   while you play. New matches show up on their own. It's fine if several
+   people run the tracker during the same game - every match is counted
+   exactly once.
 
 Quick start - setting up your own, separate leaderboard
 -------------------------------------------------------
-1. Double-click  Run-Tracker.bat  (with no .env in the folder).
-2. It asks for two Discord "webhook" URLs (and explains how to make them in
-   Discord):
+1. Double-click  Install.bat  (one time).
+2. Double-click  Setup.bat  - it asks for two Discord "webhook" URLs (and
+   explains how to make them in Discord):
      - one for a #game-results channel (a summary after every match)
      - one for a #leaderboard channel (a single, always-updated standings post)
    You can type 'skip' for either and set it later.
-3. Leave the window open while you play.
+3. Double-click  Run-Tracker.bat  and leave the window open while you play.
 
 To change your Discord settings later, double-click  Setup.bat
 
 Updating to a new version
 -------------------------
-Easiest way: download the latest .zip and extract it over your existing
-folder, keeping your .env (your settings). Then double-click Run-Tracker.bat. Your
-ranks rebuild from match history automatically.
+Download the latest .zip, extract it to a fresh folder, put your .env next
+to Run-Tracker.bat (or keep the old folder's app\.env), and run Install.bat
+once - it's quick when Node.js is already there. Your ranks rebuild from
+match history automatically.
 
 Where your matches are saved
 ----------------------------
@@ -49,15 +49,16 @@ everyone. Without a DB_URL, matches are saved to a local file on this PC
 
 Files in this folder
 --------------------
-  Run-Tracker.bat  run the tracker (first run also installs what it needs)
+  Install.bat      one-time setup - installs Node.js if missing + packages
+  Run-Tracker.bat  run the tracker (never installs anything itself)
   Setup.bat        re-run the Discord setup
   README.txt       this file
   app\             the tracker itself - you never need to open this folder
                    (source code, settings (.env), version, local match
-                   history, and the packages the first run installs)
+                   history, and the packages Install.bat downloads)
 
-Requirements: Windows 10 or 11. Node.js is installed automatically on first
-run (or grab it yourself from https://nodejs.org if the automatic install
+Requirements: Windows 10 or 11. Install.bat installs Node.js for you if it's
+missing (or grab it yourself from https://nodejs.org if the automatic install
 doesn't work).
 
 Running your own leaderboard on several PCs
