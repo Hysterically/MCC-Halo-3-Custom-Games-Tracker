@@ -8,6 +8,18 @@
  * write-only Discord webhook. The bot on the host side does everything else
  * (parse, record, rate, post) — this script never touches the database.
  *
+ * The bot's receipt reactions double as a liveness signal: every upload it
+ * processes gets a mark within seconds, and a webhook can GET its own messages
+ * back. No mark = the tracker is offline; the watcher says so (see receipts).
+ *
+ * The watcher↔tracker contract (any server rewrite must preserve it):
+ *   → upload: webhook POST with the XML attached and a message body ending in
+ *     an inline-code line `h3meta {"v":1,"matchId":…,"playedAtMs":…,
+ *     "mapName":…,"mapVariant":…,"watcher":"x.y.z"}`.
+ *   ← receipts: the bot reacts ✅ recorded / 🔁 duplicate / ⚠️ unusable on the
+ *     upload, and adds 🆙 when `watcher` is older than the bot's own copy of
+ *     this file (which triggers the self-update offer below).
+ *
  * Deliberately zero-dependency: plain Node 18+ (built-in fetch/FormData/watch),
  * nothing to npm-install, no EXE for Defender to flag. Config comes from a
  * `watcher.env` file next to this script (see watcher.env.example).
@@ -19,12 +31,19 @@
  */
 
 import { watch } from "node:fs";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Bumped with every shipped watcher change. Travels in each upload's h3meta
+ * line; the bot compares it against the copy in its own checkout and reacts 🆙
+ * when this one is older, which makes the watcher offer a self-update.
+ */
+const WATCHER_VERSION = "1.0.0";
 
 // --- config ------------------------------------------------------------------
 
@@ -56,6 +75,11 @@ const cfg = {
     fileCfg.MCC_CARNAGE_DIR ??
     join(homedir(), "AppData", "LocalLow", "MCC", "Temporary"),
 };
+
+// Friends paste webhook URLs with a trailing slash or a stray ?query tacked on;
+// both quietly break the `?wait=true` upload and `/messages/<id>` receipt
+// endpoints built from this base. Normalize once, before validation.
+cfg.webhookUrl = cfg.webhookUrl.trim().replace(/[?#].*$/, "").replace(/\/+$/, "");
 
 if (typeof fetch !== "function" || typeof FormData !== "function") {
   console.error(
@@ -95,7 +119,7 @@ const green = (s) => sgr("32", s);
 const yellow = (s) => sgr("33", s);
 const cyan = (s) => sgr("36", s);
 
-const TAG_PAINT = { sent: cyan, rate: yellow, retry: yellow, warn: yellow, fail: red, error: red };
+const TAG_PAINT = { sent: cyan, ok: green, rate: yellow, retry: yellow, warn: yellow, fail: red, error: red };
 const paintTag = (tag) => (TAG_PAINT[tag] ?? ((s) => s))(`[${tag}]`);
 
 function hhmmss() {
@@ -137,7 +161,12 @@ function statusBox(title, rows) {
 }
 
 const WORKING_TEXT = "THE WATCHER IS WORKING — GAMES WILL UPLOAD AUTOMATICALLY ONCE A GAME FINISHES";
-const workingLine = () => `${bold(green(WORKING_TEXT))}  ${green("⬤")}`;
+const WAITING_TEXT = "GAMES ARE UPLOADING — WAITING FOR THE TRACKER TO CONFIRM (RESULTS MAY POST LATE)";
+let trackerOverdue = false; // flips the pinned line yellow while a receipt is overdue
+const workingLine = () =>
+  trackerOverdue
+    ? `${bold(yellow(WAITING_TEXT))}  ${yellow("⬤")}`
+    : `${bold(green(WORKING_TEXT))}  ${green("⬤")}`;
 
 /**
  * The pinned tracked-games box: title, one row per uploaded game, then the
@@ -186,6 +215,17 @@ const gamesBox = {
   },
   add(entry) {
     this.entries.push(entry);
+    if (isTTY) {
+      this.clear();
+      this.draw();
+    } else {
+      console.log(entry);
+    }
+    return this.entries.length - 1;
+  },
+  update(i, entry) {
+    if (i < 0 || i >= this.entries.length) return;
+    this.entries[i] = entry;
     if (isTTY) {
       this.clear();
       this.draw();
@@ -359,11 +399,17 @@ function uploadContent(meta) {
     playedAtMs: Math.round(meta.playedAtMs),
     mapName: meta.mapName,
     mapVariant: meta.mapVariant,
+    watcher: WATCHER_VERSION,
   }).replaceAll("`", "'"); // a backtick would break the inline-code fence
   return `${human}\n\`h3meta ${json}\``;
 }
 
-/** POST the XML + metadata to the webhook. Retries 429/5xx/network; not 4xx. */
+/**
+ * POST the XML + metadata to the webhook. Retries 429/5xx/network; not 4xx.
+ * `?wait=true` makes Discord return the created message, whose id feeds the
+ * receipt verification below. Returns { ok, msgId } — msgId "" when the upload
+ * landed but the id couldn't be read (receipt tracking is then skipped).
+ */
 async function upload(filePath, xml, meta) {
   const payload = { content: uploadContent(meta), allowed_mentions: { parse: [] } };
   for (let attempt = 1; attempt <= 5; attempt++) {
@@ -371,8 +417,11 @@ async function upload(filePath, xml, meta) {
       const form = new FormData();
       form.append("payload_json", JSON.stringify(payload));
       form.append("files[0]", new Blob([xml], { type: "application/xml" }), basename(filePath));
-      const res = await fetch(cfg.webhookUrl, { method: "POST", body: form });
-      if (res.ok) return true;
+      const res = await fetch(`${cfg.webhookUrl}?wait=true`, { method: "POST", body: form });
+      if (res.ok) {
+        const msg = await res.json().catch(() => null);
+        return { ok: true, msgId: typeof msg?.id === "string" ? msg.id : "" };
+      }
       if (res.status === 429) {
         const body = await res.json().catch(() => ({}));
         const waitS = Number(body.retry_after) || 2;
@@ -386,14 +435,222 @@ async function upload(filePath, xml, meta) {
       }
       // Other 4xx = a config problem (revoked webhook, bad URL) — retrying won't help.
       logLine("fail", `Discord said ${res.status}: ${await res.text().catch(() => "")}`);
-      return false;
+      return { ok: false };
     } catch (e) {
       logLine("retry", `upload failed (${attempt}/5): ${e.message}`);
       await sleep(2 ** attempt * 1000);
     }
   }
+  return { ok: false };
+}
+
+// --- tracker receipts ------------------------------------------------------------
+// The bot stamps every upload it processes with a reaction within seconds
+// (✅ recorded, 🔁 duplicate, ⚠️ unusable), and a webhook may GET its own
+// messages back with the same token it posts with. That receipt is the only
+// tracker-liveness signal visible from a write-only webhook, and it drives the
+// offline warning: no mark two minutes after an upload means the tracker isn't
+// reading its mail (stopped VM, crashed bot). Marks can land hours late — the
+// tracker clears its backlog when it comes back — so overdue games keep
+// re-checking slowly and flip to confirmed whenever that happens.
+
+const STATE_PATH = join(HERE, "last-upload.json");
+const RECEIPT_MARKS = new Set(["✅", "🔁", "⚠️", "⚠"]);
+const UPDATE_MARK = "🆙"; // the bot's "a newer watcher exists" hint
+const QUICK_CHECKS_MS = [10_000, 25_000, 45_000, 75_000, 120_000];
+const OVERDUE_MS = 115_000; // warn once the ~2-minute check comes back empty
+const RECHECK_MS = 5 * 60_000;
+const MAX_TRACKED = 5; // newest games that keep polling through a long outage
+
+/**
+ * What the bot left on our upload: `receipt` (dealt with) and `update` (newer
+ * watcher available) marks, or `gone` when the message was deleted from the
+ * inbox. Null when we can't tell (network trouble, any other error).
+ */
+async function receiptMarks(msgId) {
+  try {
+    const res = await fetch(`${cfg.webhookUrl}/messages/${msgId}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.status === 404) return { receipt: false, update: false, gone: true };
+    if (!res.ok) return null;
+    const msg = await res.json();
+    const names = new Set((msg.reactions ?? []).map((r) => r.emoji?.name));
+    return {
+      receipt: [...RECEIPT_MARKS].some((m) => names.has(m)),
+      update: names.has(UPDATE_MARK),
+      gone: false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const sentEntry = (item, posted) =>
+  `${item.time} ${paintTag("sent")} ${item.label}${
+    posted ? ` → posted to game results ${green("✓")}` : " — waiting for the tracker…"
+  }`;
+
+const receipts = {
+  outstanding: [], // { msgId, label, time, boxIndex } newest-last
+  warned: false, // one offline warning per outage, not per game
+
+  /** Verify a fresh upload: pinned-box entry, state file, quick check schedule. */
+  track(msgId, label) {
+    const item = { msgId, label, time: hhmmss(), boxIndex: -1 };
+    item.boxIndex = gamesBox.add(sentEntry(item, false));
+    this.outstanding.push(item);
+    while (this.outstanding.length > MAX_TRACKED) this.outstanding.shift();
+    writeFile(STATE_PATH, JSON.stringify({ msgId, label })).catch(() => {});
+    void this.verify(item, QUICK_CHECKS_MS);
+  },
+
+  /** Adopt the previous session's last upload, found still unmarked at startup. */
+  adopt(msgId, label) {
+    const item = { msgId, label, time: hhmmss(), boxIndex: -1 };
+    this.outstanding.push(item);
+    logLine("warn", `your last game (${label}) was uploaded but its results never posted.`);
+    this.overdue();
+    void this.verify(item, []);
+  },
+
+  /** Re-check `item` on the quick schedule, then every RECHECK_MS forever. */
+  async verify(item, quick) {
+    const started = Date.now();
+    for (let i = 0; ; i++) {
+      const at =
+        i < quick.length ? quick[i] : (quick.at(-1) ?? 0) + (i - quick.length + 1) * RECHECK_MS;
+      await sleep(Math.max(0, started + at - Date.now()));
+      if (!this.outstanding.includes(item)) return; // rotated out by MAX_TRACKED — stop
+      const marks = await receiptMarks(item.msgId);
+      if (marks?.update) void offerUpdate(); // long-running watchers learn of updates here
+      if (marks?.receipt) {
+        this.confirm(item);
+        return;
+      }
+      if (marks?.gone) {
+        // The upload was deleted from the inbox — no receipt will ever come.
+        this.outstanding.splice(this.outstanding.indexOf(item), 1);
+        gamesBox.update(
+          item.boxIndex,
+          `${item.time} ${paintTag("sent")} ${item.label} — can't confirm (the upload was removed)`,
+        );
+        return;
+      }
+      if (Date.now() - started >= OVERDUE_MS) this.overdue();
+    }
+  },
+
+  confirm(item) {
+    this.outstanding.splice(this.outstanding.indexOf(item), 1);
+    gamesBox.update(item.boxIndex, sentEntry(item, true));
+    if (this.warned) {
+      this.warned = false;
+      trackerOverdue = false;
+      logLine("ok", `${bold(green("the tracker is back"))} — results posted.`);
+    }
+  },
+
+  overdue() {
+    if (this.warned) return;
+    this.warned = true;
+    trackerOverdue = true; // logLine below redraws the pinned box, now yellow
+    logLine(
+      "warn",
+      `${bold(yellow("THE TRACKER LOOKS OFFLINE"))} — your game was uploaded safely and results will post automatically when it's back.`,
+    );
+    logLine(
+      "warn",
+      `to confirm: check if "Halo 3 Custom Games Tracker" shows online in Discord, and let your host know.`,
+    );
+  },
+};
+
+// --- self-update -----------------------------------------------------------------
+// The newest watcher.mjs is published as a GitHub release asset. On startup —
+// and whenever the bot stamps an upload with 🆙 — the watcher fetches it and,
+// if it's newer, offers to install: the friend types U + Enter, the file swaps
+// itself and exits with code 42, which Run-Watcher.bat treats as "relaunch
+// now". Every failure path is silent by design (no asset published yet, no
+// internet): an update hint must never get in the way of uploading games.
+
+const UPDATE_URL =
+  process.env.H3_UPDATE_URL ??
+  "https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/releases/latest/download/watcher.mjs";
+const RESTART_EXIT_CODE = 42; // Run-Watcher.bat relaunches immediately on this
+
+const versionIn = (source) => source.match(/^const WATCHER_VERSION = "([0-9.]+)"/m)?.[1];
+
+/** True when version `a` is newer than `b` (numeric, part by part). */
+function newerVersion(a, b) {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d) return d > 0;
+  }
   return false;
 }
+
+/** The published watcher, when it's newer than this one; null otherwise. */
+async function checkForUpdate() {
+  try {
+    const res = await fetch(UPDATE_URL, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return null;
+    const content = await res.text();
+    const version = versionIn(content);
+    if (!version || !newerVersion(version, WATCHER_VERSION)) return null;
+    // Paranoia before ever treating the download as runnable: it must look
+    // like this file (header marker) and have a sane size.
+    if (!content.includes("H3 customs watcher") || content.length < 10_000 || content.length > 1_000_000) {
+      return null;
+    }
+    return { version, content };
+  } catch {
+    return null;
+  }
+}
+
+/** Swap this file for `update.content` and restart via the launcher. */
+async function applyUpdate(update) {
+  while (inFlight.size) await sleep(1000); // never restart mid-upload
+  const self = fileURLToPath(import.meta.url);
+  const staged = `${self}.new`;
+  await writeFile(staged, update.content);
+  await rename(staged, self);
+  gamesBox.clear();
+  console.log(`${hhmmss()} ${paintTag("ok")} updated to v${update.version} — restarting…`);
+  process.exit(RESTART_EXIT_CODE);
+}
+
+let updateOffer = null; // the update waiting on the friend's U, if any
+let lastUpdateCheckMs = 0;
+
+/** Check for a newer release (throttled) and put the offer on the console. */
+async function offerUpdate() {
+  if (updateOffer) return; // already offered — waiting on the friend
+  if (Date.now() - lastUpdateCheckMs < 60_000) return;
+  lastUpdateCheckMs = Date.now();
+  const update = await checkForUpdate();
+  if (!update) return;
+  updateOffer = update;
+  logLine(
+    "warn",
+    `${bold(yellow(`A NEW WATCHER VERSION IS READY (v${update.version})`))} — type U and press Enter to update. It takes a few seconds, then the watcher starts again by itself.`,
+  );
+}
+
+// The console doubles as the UI: a plain line listener (no raw mode, so Ctrl+C
+// still works) turns "U + Enter" into accepting the pending update offer.
+process.stdin.on("data", (chunk) => {
+  if (!updateOffer || String(chunk).trim().toLowerCase() !== "u") return;
+  const update = updateOffer;
+  updateOffer = null;
+  logLine("ok", `updating to v${update.version}…`);
+  applyUpdate(update).catch((e) =>
+    logLine("error", `the update failed (${e.message}) — still running v${WATCHER_VERSION}, everything keeps working.`),
+  );
+});
 
 // --- watch loop ------------------------------------------------------------------
 
@@ -436,7 +693,7 @@ async function processFile(path) {
   const playedAtMs = s.mtimeMs;
   const { mapName, mapVariant } = await findMapInfo(playedAtMs, 45_000);
 
-  const ok = await upload(path, xml, {
+  const { ok, msgId } = await upload(path, xml, {
     matchId: screened.matchId,
     gameTypeName: screened.gameTypeName,
     playedAtMs,
@@ -445,11 +702,12 @@ async function processFile(path) {
   });
   if (ok) {
     seenMatches.add(screened.matchId);
-    gamesBox.add(
-      `${hhmmss()} ${paintTag("sent")} ${screened.gameTypeName || "Custom game"}${
-        mapName ? ` on ${mapName}` : ""
-      } → game results`,
-    );
+    const label = `${screened.gameTypeName || "Custom game"}${mapName ? ` on ${mapName}` : ""}`;
+    if (msgId) {
+      receipts.track(msgId, label);
+    } else {
+      gamesBox.add(`${hhmmss()} ${paintTag("sent")} ${label} → game results`);
+    }
   } else {
     logLine("fail", `could not upload ${basename(path)} — results for this game won't post.`);
   }
@@ -490,7 +748,7 @@ const webhookOk = await (async () => {
 })();
 
 console.log(
-  statusBox(bold(cyan("H3 Customs Watcher")), [
+  statusBox(bold(cyan(`H3 Customs Watcher v${WATCHER_VERSION}`)), [
     ["Connected", "to the database", webhookOk ? green("●") : red("●")],
     ["Watching", cfg.carnageDir, green("●")],
   ]),
@@ -506,6 +764,27 @@ if (!webhookOk) {
   );
 }
 gamesBox.start();
+
+// A newer release may be waiting — the offer prints above the box if so.
+void offerUpdate();
+
+// Did the previous session's last game ever post? The state file remembers its
+// upload; if that message is still unmarked the tracker was down then and very
+// likely still is — say so now, before the friend plays into a void. Missing /
+// corrupt file, deleted message, or unreachable Discord all just stay quiet.
+void (async () => {
+  let saved;
+  try {
+    saved = JSON.parse(await readFile(STATE_PATH, "utf8"));
+  } catch {
+    return;
+  }
+  if (typeof saved?.msgId !== "string" || !saved.msgId) return;
+  const marks = await receiptMarks(saved.msgId);
+  if (marks && !marks.receipt && !marks.gone) {
+    receipts.adopt(saved.msgId, typeof saved.label === "string" && saved.label ? saved.label : "custom game");
+  }
+})();
 
 const shutdown = () => {
   gamesBox.clear();

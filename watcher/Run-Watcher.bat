@@ -13,6 +13,8 @@ if not exist "watcher.env" goto :noconfig
 
 :run
 node watcher.mjs
+rem Exit code 42 means the watcher just replaced itself with a newer version.
+if %errorlevel%==42 goto :run
 echo.
 echo The watcher stopped. Press any key to start it again, or close this window.
 pause >nul

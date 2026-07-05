@@ -24,12 +24,20 @@
  * inbox channel.
  */
 
+import { readFile } from "node:fs/promises";
 import { Client, GatewayIntentBits, type Message } from "discord.js";
 import type { Pipeline, IngestResult, ReportMeta } from "./pipeline.ts";
 
 /** Reaction per outcome; any of them means "this upload is dealt with". */
 const MARK = { recorded: "✅", duplicate: "🔁", unusable: "⚠️" } as const;
 const ALL_MARKS: ReadonlySet<string> = new Set(Object.values(MARK));
+
+/**
+ * Added (alongside the receipt) to uploads from an outdated watcher, which
+ * reads it back and offers its self-update. Deliberately NOT in ALL_MARKS —
+ * it is not a receipt and must not affect backlog dedupe.
+ */
+const UPDATE_MARK = "🆙";
 
 /** The watcher's metadata line: `h3meta {"v":1,...}` in inline code. */
 const META_RE = /`h3meta (\{[^`]*\})`/;
@@ -52,14 +60,40 @@ export function parseMeta(content: string): ReportMeta | null {
       playedAtMs?: number;
       mapName?: string;
       mapVariant?: string;
+      watcher?: string;
     };
     return {
       playedAt: Number.isFinite(raw.playedAtMs) ? new Date(raw.playedAtMs!) : undefined,
       mapName: typeof raw.mapName === "string" ? raw.mapName : undefined,
       mapVariant: typeof raw.mapVariant === "string" ? raw.mapVariant : undefined,
+      watcherVersion: typeof raw.watcher === "string" ? raw.watcher : undefined,
     };
   } catch {
     return null;
+  }
+}
+
+/** True when watcher version `a` is older than `b` (numeric, part by part). */
+export function olderVersion(a: string, b: string): boolean {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d) return d < 0;
+  }
+  return false;
+}
+
+/**
+ * The newest watcher version = the copy in this checkout ("update = git pull
+ * + restart" bumps it for free). Undefined turns the 🆙 nudge off entirely.
+ */
+async function latestWatcherVersion(): Promise<string | undefined> {
+  try {
+    const src = await readFile(new URL("../watcher/watcher.mjs", import.meta.url), "utf8");
+    return /^const WATCHER_VERSION = "([0-9.]+)"/m.exec(src)?.[1];
+  } catch {
+    return undefined;
   }
 }
 
@@ -82,6 +116,7 @@ export async function startInbox(
   opts: InboxOpts,
 ): Promise<Client> {
   const log = opts.log ?? ((m: string) => console.log(`[inbox] ${m}`));
+  const latestWatcher = await latestWatcherVersion();
 
   /**
    * Process one upload message end-to-end and react with the outcome.
@@ -91,7 +126,8 @@ export async function startInbox(
   async function handleMessage(msg: Message): Promise<void> {
     const atts = xmlAttachments(msg);
     if (!atts.length) return; // chatter in the channel — not an upload
-    const meta = parseMeta(msg.content) ?? { playedAt: msg.createdAt };
+    const parsed = parseMeta(msg.content);
+    const meta = parsed ?? { playedAt: msg.createdAt };
 
     const outcomes: IngestResult[] = [];
     for (const att of atts) {
@@ -121,6 +157,22 @@ export async function startInbox(
       // Missing Add Reactions only costs the visual receipt + backlog dedupe —
       // the match itself is safe in the DB (a re-run just lands on "duplicate").
       log(`couldn't react on ${msg.id}: ${(e as Error).message}`);
+    }
+
+    // Nudge outdated watchers: an h3meta line with no version (pre-versioning
+    // build) or an older one than our checkout's copy gets 🆙 on top of the
+    // receipt; the watcher polls its message back and offers its self-update.
+    // Bare uploads without h3meta are not watchers (e.g. the old ELO exe).
+    if (
+      latestWatcher &&
+      parsed &&
+      (!parsed.watcherVersion || olderVersion(parsed.watcherVersion, latestWatcher))
+    ) {
+      try {
+        await msg.react(UPDATE_MARK);
+      } catch {
+        // best-effort, same as the receipt — the nudge just doesn't show
+      }
     }
   }
 
