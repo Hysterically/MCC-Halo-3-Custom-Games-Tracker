@@ -165,6 +165,13 @@ Create a free database at [turso.tech](https://turso.tech) and put the same
 `DB_URL` + `DB_AUTH_TOKEN` in every host's `.env`. Recording is atomic on the
 match id, so overlapping hosts can't double-count a game.
 
+### Running 24/7 on a server (auto-updating)
+
+Hosting on a Linux box (Oracle Cloud, any VPS)? `sudo deploy/install.sh`
+sets up systemd units that keep the tracker running across crashes and
+reboots **and** auto-pull `main` every 5 minutes — pushing to GitHub is
+deploying. See [deploy/README.md](deploy/README.md).
+
 ### Building the friend launchers
 
 `bundle-watcher.bat` assembles the one-file installs from
@@ -209,6 +216,7 @@ src/        the tracker host — watch, parse, rate (TrueSkill 2 → CSR),
 watcher/    the friend install — zero-dependency watcher.mjs + launcher
 packaging/  files bundled into the distributables (installers, launcher
             template, README.txt)
+deploy/     systemd units + installer for a 24/7 auto-updating Linux host
 assets/     rank emblems, podium medals, fonts used by the renderers
 docs/       the example images above
 ```
