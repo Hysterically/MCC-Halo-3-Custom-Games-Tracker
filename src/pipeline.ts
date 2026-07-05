@@ -23,21 +23,21 @@ import {
   setMatchResultsFmt,
   hiddenXuids,
   type DB,
-} from "../../src/db.ts";
+} from "./db.ts";
 import {
   matchCsrChanges,
   matchWinChances,
   type CsrChange,
   type MatchWinChances,
-} from "../../src/trueskill2.ts";
+} from "./trueskill2.ts";
 import {
   parseCarnageFile,
   parseCarnageXml,
   type CarnageReport,
-} from "../../src/parseCarnage.ts";
-import { findMapInfo } from "../../src/mapInfo.ts";
-import { postCsrMatchResultWithControls, upsertCsrLeaderboard } from "../../src/discord.ts";
-import { RESULTS_FMT_VERSION } from "../../src/version.ts";
+} from "./parseCarnage.ts";
+import { findMapInfo } from "./mapInfo.ts";
+import { postCsrMatchResultWithControls, upsertCsrLeaderboard } from "./discord.ts";
+import { RESULTS_FMT_VERSION } from "./version.ts";
 
 export type IngestSource = "local" | "inbox";
 

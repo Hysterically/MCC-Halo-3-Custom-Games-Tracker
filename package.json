@@ -8,7 +8,6 @@
     "inspect": "tsx src/inspect.ts",
     "parse": "tsx src/parse.ts",
     "watch": "tsx src/watch.ts",
-    "watch:next": "tsx next/bot/watch.ts",
     "backfill": "tsx src/backfill.ts",
     "board": "tsx src/board.ts",
     "announce": "tsx src/announce.ts",
