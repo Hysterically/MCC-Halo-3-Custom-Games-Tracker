@@ -11,6 +11,22 @@ leaderboard for Halo 3 custom games in MCC — posted straight to Discord.**
 
 </div>
 
+## Who this is for
+
+Small groups of friends who play Halo 3 customs regularly and want those
+games to *count*: a persistent, competitive leaderboard powered by
+**TrueSkill 2** — the rating model Halo 5's own matchmaking ran on — and
+displayed as the **Halo 5 CSR ladder** you already know, Bronze through Onyx
+with Champion at the top. Grind for Onyx, defend your spot, talk trash with
+receipts.
+
+Nothing about how you play changes. There's no queue bot in the middle — no
+[NeatQueue](https://www.neatqueue.com/)-style routine where everyone joins
+the Discord server, queues through the bot, and votes on the winner
+afterwards. You start customs like always; one person in the lobby runs the
+tracker; and full results — kills, assists, deaths, and rating changes, not
+just win/loss — land in Discord on their own.
+
 The tracker reads the carnage report files Halo: MCC saves after each game — no
 game hooks, no screen capture, and it never touches a Microsoft or Xbox
 account. Every finished custom becomes a post-game carnage screen in Discord:
@@ -35,51 +51,6 @@ CSR (Bronze through Onyx, with Champion for the top of the board):
 - [Configuration reference](#configuration-reference)
 - [Repository layout](#repository-layout)
 - [Development](#development)
-
-## Who this is for
-
-Ever wished the games from customs night actually *counted*? Matchmaking got
-ranks, stats, and a ladder to climb — your custom games, the ones you care
-about, evaporated the moment the carnage screen faded. This tracker gives a
-small community of friends the full ranked experience for the customs they
-already play: **TrueSkill 2** — the rating model Halo 5's matchmaking
-actually ran on, descended from the TrueSkill system that ranked you in
-Halo 3 back on Xbox Live — doing the math underneath, and the **Halo 5 CSR
-ladder** you already know (Bronze through Onyx, Champion at the top) as the
-face of it. Grind for Onyx. Defend your Champion spot. Talk trash with
-receipts — every kill, death, and rating point is on the board.
-
-It's built for exactly one shape of group: a Discord of friends who get
-together for Halo 3 customs regularly and want a persistent, competitive
-leaderboard — **without changing how they play**. Nobody queues, nobody
-reports scores, nobody fills in spreadsheets. You start a custom game like
-always; one person in the lobby has the tracker running; the results and
-standings show up in Discord on their own.
-
-### Why not a queue bot like NeatQueue?
-
-Queue bots such as [NeatQueue](https://www.neatqueue.com/) are excellent at
-what they're built for — organized PUGs and tournaments — but they run the
-match *through Discord*: every player joins the server, queues up via the
-bot before each game, and when it ends the lobby goes back to Discord to
-vote on who won. And because MCC has no public stats API, a bot can never
-see the game itself — its MMR runs on those hand-reported wins and losses
-alone.
-
-This tracker inverts that. MCC already writes a full carnage report to disk
-after every game, so the source of truth is the game itself:
-
-| | **Halo 3 Customs Tracker** | **Queue bots (e.g. NeatQueue)** |
-|---|---|---|
-| Playing a match | Just join the lobby, like any customs night | Everyone queues through the bot in Discord first |
-| Recording results | Automatic — parsed from MCC's own carnage reports | Players vote on / report the winner after each game |
-| Stats | Full scoreboard: score, kills, assists, deaths, K/D | Win–loss only (MCC has no API for a bot to read) |
-| Rating | TrueSkill 2 per player, from real match data | Bot MMR from reported outcomes |
-| Per-player effort | None — one person in the lobby runs the tracker | Every player, every match |
-
-If your group runs structured pick-up games with strangers, a queue bot is
-the right tool. If your group just *plays customs* and wants those games to
-feed a real ranking, this is.
 
 ## Features
 
