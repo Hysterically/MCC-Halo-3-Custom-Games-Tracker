@@ -25,14 +25,17 @@ Xbox account.
    [nodejs.org](https://nodejs.org) → the green **LTS** button → next, next,
    finish. The watcher is plain source code rather than an .exe — Node.js is
    the program that runs it, and you can open the file to read every line.
-2. **[⬇ Download Run-Watcher.bat](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/releases/latest/download/Run-Watcher.bat)**
+   Or let
+   [⬇ Install-Node.bat](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/releases/latest/download/Install-Node.bat)
+   do it for you — Run-Tracker.bat will point you to it if Node.js is missing.
+2. **[⬇ Download Run-Tracker.bat](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/releases/latest/download/Run-Tracker.bat)**
    and put it in its own folder anywhere. That single file is the whole
    install — no zip, nothing to extract.
 3. **Ask Hysterically for the group settings** — one line that connects your
    watcher to *our* leaderboard. (Playing with us on Discord? The copy pinned
    in the download channel has it baked in already — grab that one and skip
    this step.)
-4. Double-click **`Run-Watcher.bat`** whenever you play customs and leave the
+4. Double-click **`Run-Tracker.bat`** whenever you play customs and leave the
    window open. Results appear in Discord on their own.
 
 **Requirements:** Windows 10/11, Halo: MCC, and Node.js 18 or newer.

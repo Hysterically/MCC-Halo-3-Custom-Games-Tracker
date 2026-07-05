@@ -1,13 +1,14 @@
 @echo off
 setlocal
-title H3 Customs Watcher
+title H3 Customs Tracker
 cd /d "%~dp0"
 
 rem ---------------------------------------------------------------------
-rem  H3 Customs Watcher - everything in one file. The watcher's code sits
-rem  below the payload marker at the bottom of this file and is unpacked
-rem  to watcher.mjs on first run. The watcher keeps watcher.mjs up to
-rem  date by itself after that, so an existing copy is never overwritten.
+rem  H3 Customs Tracker - the watcher, everything in one file. Its code
+rem  sits below the payload marker at the bottom of this file and is
+rem  unpacked to watcher.mjs on first run. The watcher keeps watcher.mjs
+rem  up to date by itself after that, so an existing copy is never
+rem  overwritten.
 rem ---------------------------------------------------------------------
 
 rem The group's upload settings (baked in by bundle-watcher.bat).
@@ -27,7 +28,7 @@ node watcher.mjs
 rem Exit code 42 means the watcher just replaced itself with a newer version.
 if %errorlevel%==42 goto :run
 echo.
-echo The watcher stopped. Press any key to start it again, or close this window.
+echo The tracker stopped. Press any key to start it again, or close this window.
 pause >nul
 goto :run
 
@@ -49,14 +50,32 @@ exit /b 1
 
 :nonode
 echo Node.js was not found on this PC.
+if exist "%~dp0Install-Node.bat" goto nonode_helper
 echo Install the LTS version from https://nodejs.org then run this again.
+echo Or grab Install-Node.bat from the tracker's download page and it will
+echo install Node.js for you.
+echo.
+pause
+exit /b 1
+
+:nonode_helper
+echo Double-click Install-Node.bat - it's in this folder, right next to this
+echo file - and it will install Node.js for you. Then run this file again.
 echo.
 pause
 exit /b 1
 
 :oldnode
-echo Your Node.js is too old for the watcher - it needs version 18 or newer.
+echo Your Node.js is too old for the tracker - it needs version 18 or newer.
+if exist "%~dp0Install-Node.bat" goto oldnode_helper
 echo Install the current LTS from https://nodejs.org then run this again.
+echo.
+pause
+exit /b 1
+
+:oldnode_helper
+echo Double-click Install-Node.bat - it's in this folder, right next to this
+echo file - and it will update Node.js for you. Then run this file again.
 echo.
 pause
 exit /b 1

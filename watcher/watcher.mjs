@@ -1,7 +1,7 @@
 /**
  * H3 customs watcher — the tiny script friends run (the whole friend install).
  *
- *   node watcher.mjs        (or double-click Run-Watcher.bat)
+ *   node watcher.mjs        (or double-click Run-Tracker.bat)
  *
  * Watches the MCC carnage folder and uploads each completed Halo 3 custom's
  * mpcarnagereport*.xml to the group's private #carnage-inbox channel through a
@@ -43,7 +43,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * line; the bot compares it against the copy in its own checkout and reacts 🆙
  * when this one is older, which makes the watcher offer a self-update.
  */
-const WATCHER_VERSION = "1.0.0";
+const WATCHER_VERSION = "1.1.0";
 
 // --- config ------------------------------------------------------------------
 
@@ -148,12 +148,13 @@ function statusBox(title, rows) {
     Math.max(visibleLen(title), ...rows.map(([, v]) => labelW + 2 + v.length + 2)),
   );
   const line = (s) => `│ ${padVis(s, innerW)} │`;
+  const centered = " ".repeat(Math.max(0, Math.floor((innerW - visibleLen(title)) / 2))) + title;
   const body = rows.map(([l, v, light]) =>
     line(padVis(`${l.padEnd(labelW)}  ${v}`, innerW - 2) + " " + light),
   );
   return [
     `┌─${"─".repeat(innerW)}─┐`,
-    line(title),
+    line(centered),
     `├─${"─".repeat(innerW)}─┤`,
     ...body,
     `└─${"─".repeat(innerW)}─┘`,
@@ -162,11 +163,12 @@ function statusBox(title, rows) {
 
 const WORKING_TEXT = "THE WATCHER IS WORKING — GAMES WILL UPLOAD AUTOMATICALLY ONCE A GAME FINISHES";
 const WAITING_TEXT = "GAMES ARE UPLOADING — WAITING FOR THE TRACKER TO CONFIRM (RESULTS MAY POST LATE)";
-let trackerOverdue = false; // flips the pinned line yellow while a receipt is overdue
+let trackerOverdue = false; // flips the pinned light yellow while a receipt is overdue
+// Plain bold text — a whole line of color is too loud; the ⬤ carries the state.
 const workingLine = () =>
   trackerOverdue
-    ? `${bold(yellow(WAITING_TEXT))}  ${yellow("⬤")}`
-    : `${bold(green(WORKING_TEXT))}  ${green("⬤")}`;
+    ? `${bold(WAITING_TEXT)}  ${yellow("⬤")}`
+    : `${bold(WORKING_TEXT)}  ${green("⬤")}`;
 
 /**
  * The pinned tracked-games box: title, one row per uploaded game, then the
@@ -570,14 +572,14 @@ const receipts = {
 // The newest watcher.mjs is published as a GitHub release asset. On startup —
 // and whenever the bot stamps an upload with 🆙 — the watcher fetches it and,
 // if it's newer, offers to install: the friend types U + Enter, the file swaps
-// itself and exits with code 42, which Run-Watcher.bat treats as "relaunch
+// itself and exits with code 42, which Run-Tracker.bat treats as "relaunch
 // now". Every failure path is silent by design (no asset published yet, no
 // internet): an update hint must never get in the way of uploading games.
 
 const UPDATE_URL =
   process.env.H3_UPDATE_URL ??
   "https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/releases/latest/download/watcher.mjs";
-const RESTART_EXIT_CODE = 42; // Run-Watcher.bat relaunches immediately on this
+const RESTART_EXIT_CODE = 42; // Run-Tracker.bat relaunches immediately on this
 
 const versionIn = (source) => source.match(/^const WATCHER_VERSION = "([0-9.]+)"/m)?.[1];
 
@@ -748,7 +750,7 @@ const webhookOk = await (async () => {
 })();
 
 console.log(
-  statusBox(bold(cyan(`H3 Customs Watcher v${WATCHER_VERSION}`)), [
+  statusBox(bold(cyan(`H3 Customs Tracker v${WATCHER_VERSION}`)), [
     ["Connected", "to the database", webhookOk ? green("●") : red("●")],
     ["Watching", cfg.carnageDir, green("●")],
   ]),
