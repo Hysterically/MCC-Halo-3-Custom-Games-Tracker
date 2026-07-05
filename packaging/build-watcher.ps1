@@ -28,5 +28,14 @@ if ($env:WEBHOOK_URL -and $public.Contains($env:WEBHOOK_URL)) {
   throw 'public variant contains the live webhook URL'
 }
 
+# The Discord attachment is a zip: Discord renders a bare .bat as an inline
+# text preview (clicking opens a viewer, not a download); a zip stays a
+# normal downloadable file. GitHub serves the bare .bat fine, so only the
+# ready variant gets wrapped.
+$readyZip = Join-Path $readyDir 'Run-Watcher.zip'
+if (Test-Path $readyZip) { Remove-Item $readyZip -Force }
+Compress-Archive -Path (Join-Path $readyDir 'Run-Watcher.bat') -DestinationPath $readyZip
+
 Write-Host "[build-watcher] dist\watcher-ready\Run-Watcher.bat  (settings baked in)"
+Write-Host "[build-watcher] dist\watcher-ready\Run-Watcher.zip  (the Discord attachment)"
 Write-Host "[build-watcher] dist\watcher-public\Run-Watcher.bat (no settings - GitHub)"
