@@ -220,19 +220,39 @@ const watcher = chokidar.watch(config.carnageDir, {
   awaitWriteFinish: { stabilityThreshold: 1500, pollInterval: 200 },
 });
 
+// Ingest retry ladder for transient DB errors. Chokidar never re-fires for a
+// finished file (its mtime is final) and startup skips historic reports, so a
+// dropped ingest would silently lose the game — retry here instead.
+const RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
+
 async function onFile(path: string): Promise<void> {
   if (!isCarnage(path)) return;
   const m = await stat(path).then((s) => s.mtimeMs).catch(() => 0);
   if (seen.get(path) === m) return;
   seen.set(path, m);
 
-  try {
-    const out = await pipeline.ingestLocalFile(path);
-    if (out.status === "invalid") console.warn(`[skip] ${path}: ${out.reason}`);
-  } catch (e) {
-    // A transient DB error (e.g. the shared remote DB hiccuped) shouldn't kill
-    // the watcher — skip this file; the next event or a restart re-ingests it.
-    console.error(`[db] record failed for ${path}: ${(e as Error).message}`);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const out = await pipeline.ingestLocalFile(path);
+      if (out.status === "invalid") console.warn(`[skip] ${path}: ${out.reason}`);
+      return;
+    } catch (e) {
+      // A transient DB error (e.g. the shared remote DB hiccuped) shouldn't
+      // kill the watcher. recordMatch's atomic insert makes retries safe.
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) {
+        seen.delete(path); // let a future event for this file try again
+        console.error(
+          `[db] record failed for ${path} after ${attempt + 1} attempts: ${(e as Error).message}` +
+            " — this game was NOT recorded; run `npm run backfill` to recover it",
+        );
+        return;
+      }
+      console.error(
+        `[db] record failed for ${path}: ${(e as Error).message} — retrying in ${delay / 1000}s`,
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
   }
 }
 
