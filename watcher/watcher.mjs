@@ -55,8 +55,6 @@ const cfg = {
     process.env.MCC_CARNAGE_DIR ??
     fileCfg.MCC_CARNAGE_DIR ??
     join(homedir(), "AppData", "LocalLow", "MCC", "Temporary"),
-  /** Optional name shown on uploads, so the inbox says whose PC sent the game. */
-  uploader: process.env.H3_UPLOADER ?? fileCfg.UPLOADER ?? "",
 };
 
 if (typeof fetch !== "function" || typeof FormData !== "function") {
@@ -74,13 +72,135 @@ if (!/^https?:\/\//.test(cfg.webhookUrl) || cfg.webhookUrl.includes("CHANGE/ME")
   );
   process.exit(1);
 }
-if (!/^https:\/\/(\w+\.)?discord\.com\/api\/webhooks\/\d+\/[\w-]+/.test(cfg.webhookUrl)) {
-  // Not fatal (lets a test server stand in for Discord), but a friend with a
-  // mangled URL should hear about it before their games silently fail to send.
-  console.warn("[warn] WEBHOOK_URL doesn't look like a Discord webhook — uploads may fail.");
-}
+// Not fatal (lets a test server stand in for Discord), but a friend with a
+// mangled URL should hear about it before their games silently fail to send.
+// Printed below the banner once the console is set up.
+const urlWarn = /^https:\/\/(\w+\.)?discord\.com\/api\/webhooks\/\d+\/[\w-]+/.test(cfg.webhookUrl)
+  ? ""
+  : "WEBHOOK_URL doesn't look like a Discord webhook — uploads may fail.";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// --- console presentation --------------------------------------------------------
+// A miniature of src/term.ts's look: boxed panels, colored [tag] lines, HH:MM:SS
+// stamps, and a pinned tracked-games box at the bottom. dim/gray are deliberately
+// absent — they render unreadably on Windows Terminal dark themes, so hierarchy
+// comes from the accent colors only. Everything degrades to plain text off a TTY.
+
+const isTTY = Boolean(process.stdout.isTTY) && process.env.NO_COLOR === undefined;
+const sgr = (code, s) => (isTTY ? `\x1b[${code}m${s}\x1b[0m` : s);
+const bold = (s) => sgr("1", s);
+const red = (s) => sgr("31", s);
+const green = (s) => sgr("32", s);
+const yellow = (s) => sgr("33", s);
+const cyan = (s) => sgr("36", s);
+
+const TAG_PAINT = { sent: cyan, rate: yellow, retry: yellow, warn: yellow, fail: red, error: red };
+const paintTag = (tag) => (TAG_PAINT[tag] ?? ((s) => s))(`[${tag}]`);
+
+function hhmmss() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/** Visible width of a string: length with any ANSI color codes stripped. */
+const visibleLen = (s) => s.replace(/\x1b\[[0-9;]*m/g, "").length;
+const padVis = (s, w) => s + " ".repeat(Math.max(0, w - visibleLen(s)));
+
+const maxBoxInner = () => Math.max(40, (process.stdout.columns ?? 100) - 4);
+
+/**
+ * A status panel box: title row, separator, then `label  value  ●` rows with the
+ * light right-aligned against the border. Values too long for the terminal keep
+ * their tail (the end of a path is the informative part).
+ */
+function statusBox(title, rows) {
+  const labelW = Math.max(...rows.map(([l]) => l.length));
+  const budget = maxBoxInner() - labelW - 2 - 2;
+  rows = rows.map(([l, v, light]) => [l, v.length > budget ? `…${v.slice(-(budget - 1))}` : v, light]);
+  const innerW = Math.min(
+    maxBoxInner(),
+    Math.max(visibleLen(title), ...rows.map(([, v]) => labelW + 2 + v.length + 2)),
+  );
+  const line = (s) => `│ ${padVis(s, innerW)} │`;
+  const body = rows.map(([l, v, light]) =>
+    line(padVis(`${l.padEnd(labelW)}  ${v}`, innerW - 2) + " " + light),
+  );
+  return [
+    `┌─${"─".repeat(innerW)}─┐`,
+    line(title),
+    `├─${"─".repeat(innerW)}─┤`,
+    ...body,
+    `└─${"─".repeat(innerW)}─┘`,
+  ].join("\n");
+}
+
+const WORKING_TEXT = "THE WATCHER IS WORKING — GAMES WILL UPLOAD AUTOMATICALLY ONCE A GAME FINISHES";
+const workingLine = () => `${bold(green(WORKING_TEXT))}  ${green("⬤")}`;
+
+/**
+ * The pinned tracked-games box: title, one row per uploaded game, then the
+ * all-caps working line — always the last thing on the console. On a TTY it's
+ * wiped (cursor-up + clear) and redrawn whenever a game lands or another line
+ * must print above it; off a TTY it prints plainly, once, with no escapes.
+ */
+const gamesBox = {
+  entries: [],
+  drawnHeight: 0,
+  active: false,
+  lines() {
+    const rows = this.entries.length ? this.entries : ["(none yet)"];
+    const all = [bold("TRACKED GAMES SO FAR"), ...rows, workingLine()];
+    const innerW = Math.min(maxBoxInner(), Math.max(...all.map(visibleLen)));
+    const line = (s) => `│ ${padVis(s, innerW)} │`;
+    return [
+      `┌─${"─".repeat(innerW)}─┐`,
+      line(all[0]),
+      `├─${"─".repeat(innerW)}─┤`,
+      ...rows.map(line),
+      `├─${"─".repeat(innerW)}─┤`,
+      line(workingLine()),
+      `└─${"─".repeat(innerW)}─┘`,
+    ];
+  },
+  draw() {
+    if (!isTTY || !this.active) return;
+    const ls = this.lines();
+    process.stdout.write(ls.join("\n") + "\n");
+    this.drawnHeight = ls.length;
+  },
+  clear() {
+    if (!isTTY || !this.drawnHeight) return;
+    process.stdout.write(`\x1b[${this.drawnHeight}A\x1b[0J`);
+    this.drawnHeight = 0;
+  },
+  start() {
+    this.active = true;
+    if (isTTY) {
+      this.draw();
+    } else {
+      console.log("TRACKED GAMES SO FAR:");
+      console.log(WORKING_TEXT);
+    }
+  },
+  add(entry) {
+    this.entries.push(entry);
+    if (isTTY) {
+      this.clear();
+      this.draw();
+    } else {
+      console.log(entry);
+    }
+  },
+};
+
+/** Print a timestamped `[tag]` line above the pinned tracked-games box. */
+function logLine(tag, msg) {
+  gamesBox.clear();
+  console.log(`${hhmmss()} ${paintTag(tag)} ${msg}`);
+  gamesBox.draw();
+}
 
 // --- pre-filter ----------------------------------------------------------------
 // A cheap regex screen so only completed Halo 3 customs reach the inbox — the
@@ -232,17 +352,13 @@ async function findMapInfo(playedAtMs, waitMs) {
  */
 function uploadContent(meta) {
   const map = meta.mapVariant ?? meta.mapName;
-  const human =
-    `🎮 **${meta.gameTypeName || "Custom Game"}**` +
-    (map ? ` on ${map}` : "") +
-    (cfg.uploader ? ` · from ${cfg.uploader}` : "");
+  const human = `🎮 **${meta.gameTypeName || "Custom Game"}**` + (map ? ` on ${map}` : "");
   const json = JSON.stringify({
     v: 1,
     matchId: meta.matchId,
     playedAtMs: Math.round(meta.playedAtMs),
     mapName: meta.mapName,
     mapVariant: meta.mapVariant,
-    uploader: cfg.uploader || undefined,
   }).replaceAll("`", "'"); // a backtick would break the inline-code fence
   return `${human}\n\`h3meta ${json}\``;
 }
@@ -260,7 +376,7 @@ async function upload(filePath, xml, meta) {
       if (res.status === 429) {
         const body = await res.json().catch(() => ({}));
         const waitS = Number(body.retry_after) || 2;
-        console.warn(`[rate] Discord asked us to wait ${waitS}s…`);
+        logLine("rate", `Discord asked us to wait ${waitS}s…`);
         await sleep(waitS * 1000 + 250);
         continue;
       }
@@ -269,10 +385,10 @@ async function upload(filePath, xml, meta) {
         continue;
       }
       // Other 4xx = a config problem (revoked webhook, bad URL) — retrying won't help.
-      console.error(`[fail] Discord said ${res.status}: ${await res.text().catch(() => "")}`);
+      logLine("fail", `Discord said ${res.status}: ${await res.text().catch(() => "")}`);
       return false;
     } catch (e) {
-      console.warn(`[retry ${attempt}/5] upload failed: ${e.message}`);
+      logLine("retry", `upload failed (${attempt}/5): ${e.message}`);
       await sleep(2 ** attempt * 1000);
     }
   }
@@ -313,13 +429,9 @@ async function processFile(path) {
   if (!s) return;
   const xml = await readFile(path, "utf8");
   const screened = screenReport(xml);
-  if (screened.drop) {
-    console.log(`[skip] ${basename(path)}: ${screened.drop}`);
-    return;
-  }
+  if (screened.drop) return; // not a finished Halo 3 custom — nothing worth showing
   if (seenMatches.has(screened.matchId)) return;
 
-  console.log(`[game] ${screened.gameTypeName || "custom game"} finished — finding the map…`);
   // played-at = file mtime; the film that names the map lands a few seconds later.
   const playedAtMs = s.mtimeMs;
   const { mapName, mapVariant } = await findMapInfo(playedAtMs, 45_000);
@@ -333,11 +445,13 @@ async function processFile(path) {
   });
   if (ok) {
     seenMatches.add(screened.matchId);
-    console.log(
-      `[sent] ${screened.gameTypeName || "custom game"}${mapName ? ` on ${mapName}` : ""} → #carnage-inbox`,
+    gamesBox.add(
+      `${hhmmss()} ${paintTag("sent")} ${screened.gameTypeName || "Custom game"}${
+        mapName ? ` on ${mapName}` : ""
+      } → game results`,
     );
   } else {
-    console.error(`[fail] could not upload ${basename(path)} — results for this game won't post.`);
+    logLine("fail", `could not upload ${basename(path)} — results for this game won't post.`);
   }
 }
 
@@ -346,7 +460,7 @@ function enqueue(path) {
   inFlight.add(path);
   queue = queue
     .then(() => processFile(path))
-    .catch((e) => console.error(`[error] ${basename(path)}: ${e.message}`))
+    .catch((e) => logLine("error", `${basename(path)}: ${e.message}`))
     .finally(() => inFlight.delete(path));
 }
 
@@ -364,16 +478,38 @@ try {
   process.exit(1);
 }
 
-console.log("H3 Customs Watcher");
-console.log(`  Watching  ${cfg.carnageDir}`);
-console.log(`  Uploads   #carnage-inbox (webhook …${cfg.webhookUrl.slice(-6)})`);
-if (cfg.uploader) console.log(`  Uploader  ${cfg.uploader}`);
+// The Connected light has to be truthful: GET on a Discord webhook URL returns
+// its info without posting anything, so it doubles as a free reachability check.
+const webhookOk = await (async () => {
+  try {
+    const res = await fetch(cfg.webhookUrl, { signal: AbortSignal.timeout(5000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+})();
+
+console.log(
+  statusBox(bold(cyan("H3 Customs Watcher")), [
+    ["Connected", "to the database", webhookOk ? green("●") : red("●")],
+    ["Watching", cfg.carnageDir, green("●")],
+  ]),
+);
+console.log(" How it works: keep this window open — when a custom ends it's sent to the");
+console.log(" tracker, which posts to the leaderboard and game results channels on Discord.");
 console.log("");
-console.log("Leave this window open while you play customs — finished games upload");
-console.log("automatically and the bot posts the results.");
+if (urlWarn) logLine("warn", urlWarn);
+if (!webhookOk) {
+  logLine(
+    "warn",
+    "can't reach Discord right now — uploads may fail. If this keeps happening, ask your host for a fresh watcher.env.",
+  );
+}
+gamesBox.start();
 
 const shutdown = () => {
-  console.log("\n[exit] closing…");
+  gamesBox.clear();
+  console.log(`${hhmmss()} [exit] closing…`);
   watcher.close();
   process.exit(0);
 };
