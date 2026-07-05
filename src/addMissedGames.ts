@@ -56,9 +56,10 @@ import type { CarnageReport, CarnagePlayer } from "./parseCarnage.ts";
 const CONFIRM = process.argv.includes("--confirm");
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Discord #game-results message ids the user gave as anchors. */
-const CONSTRUCT_MSG = "1520649836787925102";
-const PIT_MSG = "1520660826556596376";
+/** Discord #game-results message ids the user gave as anchors. One-off script:
+ *  paste the real ids (here and in verifyPosts below) before running. */
+const CONSTRUCT_MSG = "PASTE_CONSTRUCT_MESSAGE_ID";
+const PIT_MSG = "PASTE_PIT_MESSAGE_ID";
 
 /** Seconds to nudge the new games off Construct's timestamp (well inside the
  *  ~46 min / ~24.5 min gaps to its neighbors, so they land adjacent to it). */
@@ -230,8 +231,8 @@ function printReport(label: string, r: CarnageReport): void {
 async function verifyPosts(db: DB): Promise<void> {
   const oldIds = [
     CONSTRUCT_MSG,
-    "1520656008504938576", // Narrows
-    "1520657709056262174", // Heretic
+    "PASTE_NARROWS_MESSAGE_ID",
+    "PASTE_HERETIC_MESSAGE_ID",
     PIT_MSG,
   ];
   const candidates = await resultsWebhookCandidates(db);
