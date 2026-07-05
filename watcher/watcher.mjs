@@ -370,7 +370,7 @@ console.log(`  Uploads   #carnage-inbox (webhook …${cfg.webhookUrl.slice(-6)})
 if (cfg.uploader) console.log(`  Uploader  ${cfg.uploader}`);
 console.log("");
 console.log("Leave this window open while you play customs — finished games upload");
-console.log("automatically and the bot posts the results. Press Ctrl+C to quit.");
+console.log("automatically and the bot posts the results.");
 
 const shutdown = () => {
   console.log("\n[exit] closing…");
