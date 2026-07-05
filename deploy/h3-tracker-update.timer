@@ -1,0 +1,14 @@
+; Checks GitHub for new commits every 5 minutes (plus once shortly after
+; boot). Installed by deploy/install.sh; enable with:
+;   sudo systemctl enable --now h3-tracker-update.timer
+
+[Unit]
+Description=Periodic update check for the Halo 3 Customs Tracker
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

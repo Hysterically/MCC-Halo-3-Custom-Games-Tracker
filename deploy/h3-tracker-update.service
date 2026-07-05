@@ -1,0 +1,15 @@
+; One-shot updater, fired by h3-tracker-update.timer. Runs as root so it can
+; restart h3-tracker.service; update.sh drops to __USER__ for all git/npm work.
+; Template: installed (with placeholders filled) by deploy/install.sh.
+
+[Unit]
+Description=Halo 3 Customs Tracker — pull latest main and restart if changed
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=H3_USER=__USER__
+Environment=H3_REPO=__REPO__
+Environment=PATH=__NODE_DIR__:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+ExecStart=/bin/bash __REPO__/deploy/update.sh
