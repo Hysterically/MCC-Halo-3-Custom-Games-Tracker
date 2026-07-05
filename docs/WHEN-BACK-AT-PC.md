@@ -13,28 +13,31 @@ On GitHub: open a pull request from `claude/github-sync-multiple-versions-gvbkc9
 into `main` and merge it. (Or locally: `git checkout main && git merge
 claude/github-sync-multiple-versions-gvbkc9 && git push origin main`.)
 
-## 2. Update the live install (Oracle server) — back up first!
+## 2. Update the live install (Oracle server) — move private files first!
 
-The merge *deletes* `CLAUDE.md` and `aliases.json` from git tracking. When the
-server pulls it, git will remove/complain about the local copies. So:
+The merge changes what's tracked: `aliases.json` leaves git tracking, and
+`CLAUDE.md` is replaced by a new PUBLIC version (safe project notes that
+Claude Code auto-reads on any machine). Your private maintainer notes now
+live in `CLAUDE.local.md` — gitignored, and Claude Code auto-reads that too.
+Git will refuse to pull over your local copies, so move them first:
 
 ```bash
 cd <tracker repo on the server>
+mv CLAUDE.md CLAUDE.local.md         # private notes keep working under the new name
 cp aliases.json ../aliases.json.bak
-cp CLAUDE.md ../CLAUDE.md.bak        # if it exists here
 git pull origin main
 cp ../aliases.json.bak aliases.json
-cp ../CLAUDE.md.bak CLAUDE.md
 ```
 
-After this, both files are gitignored — git will never touch or commit them
-again. Restart the tracker if it was running.
+After this the public `CLAUDE.md` is a normal tracked file; `CLAUDE.local.md`
+and `aliases.json` are gitignored — git will never touch or commit them again.
+Restart the tracker if it was running.
 
 ## 3. Sanity-check the separation
 
 ```bash
-git status          # should say clean — no aliases.json, no CLAUDE.md, no .env, no data/
-git check-ignore -v aliases.json CLAUDE.md .env data
+git status          # should say clean — no aliases.json, no CLAUDE.local.md, no .env, no data/
+git check-ignore -v aliases.json CLAUDE.local.md .env data
 ```
 
 If `git status` shows any of the private files as changes, stop and fix

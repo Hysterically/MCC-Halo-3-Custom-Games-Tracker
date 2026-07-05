@@ -12,9 +12,9 @@ carnage.png
 /backups/
 /tmp-release.json
 
-# Owner-local files that must never be committed. CLAUDE.md / CLAUDE.local.md
-# hold private maintainer notes; aliases.json holds the group's real display
-# mapping. Keep other personal ignores in .git/info/exclude, not here.
-CLAUDE.md
+# Owner-local files that must never be committed. CLAUDE.local.md holds
+# private maintainer notes (CLAUDE.md is the public, committed version);
+# aliases.json holds the group's real display mapping. Keep other personal
+# ignores in .git/info/exclude, not here.
 CLAUDE.local.md
 /aliases.json
