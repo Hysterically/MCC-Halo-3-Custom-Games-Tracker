@@ -11,6 +11,23 @@ leaderboard for Halo 3 custom games in MCC — posted straight to Discord.**
 
 </div>
 
+## Who this is for
+
+MCC's ranked playlists are thinning out — these days, competitive Halo 3
+mostly lives in custom games with the people you actually play with. This
+tracker gives those customs the stakes ranked used to have: a persistent,
+competitive leaderboard powered by **TrueSkill 2** — the rating model Halo
+5's own matchmaking ran on — and displayed as the **Halo 5 CSR ladder** you
+already know, Bronze through Onyx with Champion at the top. Grind for Onyx,
+defend your spot, talk trash with receipts.
+
+Nothing about how you play changes. There's no queue bot in the middle — no
+[NeatQueue](https://www.neatqueue.com/)-style routine where everyone joins
+the Discord server, queues through the bot, and votes on the winner
+afterwards. You start customs like always; one person in the lobby runs the
+tracker; and full results — kills, assists, deaths, and rating changes, not
+just win/loss — land in Discord on their own.
+
 The tracker reads the carnage report files Halo: MCC saves after each game — no
 game hooks, no screen capture, and it never touches a Microsoft or Xbox
 account. Every finished custom becomes a post-game carnage screen in Discord:
@@ -26,6 +43,7 @@ CSR (Bronze through Onyx, with Champion for the top of the board):
 
 ## Contents
 
+- [Who this is for](#who-this-is-for)
 - [Features](#features)
 - [The rank ladder](#the-rank-ladder)
 - [How it works](#how-it-works)
@@ -81,16 +99,20 @@ whose PC recorded the game.
 
 ```mermaid
 flowchart LR
-    subgraph friends["Friends' PCs"]
-        X1["MCC writes<br/>mpcarnagereport*.xml"] --> W["watcher<br/>(Run-Tracker.bat)"]
+
+    subgraph friends["Friends PCs"]
+        X1["MCC writes\nmpcarnagereport*.xml"] --> W["watcher\n(Run-Tracker.bat)"]
     end
-    W -- "write-only webhook" --> INBOX["#carnage-inbox<br/>(private channel)"]
+
+    W -- "write-only webhook" --> INBOX["#carnage-inbox\n(private channel)"]
+
     subgraph host["Tracker host (runs 24/7)"]
-        X2["host's own<br/>MCC carnage folder"] --> PIPE
-        INBOX --> PIPE["parse → record →<br/>TrueSkill 2 → render"]
+        X2["Host's own\nMCC carnage folder"] --> PIPE
+        INBOX --> PIPE["Parse → Record →\nTrueSkill 2 → Render"]
     end
+
     PIPE --> RES["#game-results"]
-    PIPE --> LB["#leaderboard<br/>(edited in place)"]
+    PIPE --> LB["#leaderboard\n(edited in place)"]
 ```
 
 The watcher never touches the database; the host does all parsing, rating, and
