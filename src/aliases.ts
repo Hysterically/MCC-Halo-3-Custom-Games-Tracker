@@ -1,13 +1,13 @@
 /**
  * Display-name aliases. Some Gamertags render badly on the board — e.g. a
- * capital "I" that reads like a lowercase "l" (RingRunnerII7 vs Hysterically).
+ * capital "I" that reads like a lowercase "l" (RingRunnerII7 vs RingRunner117).
  * This lets a player choose how their name *displays* without rewriting any
  * match history: matches stay keyed by XUID, only the rendered label changes.
  *
  * The map lives in a JSON file (default ./aliases.json, override ALIASES_PATH)
  * keyed by the in-game Gamertag:
  *
- *   { "RingRunnerII7": "Hysterically" }
+ *   { "RingRunnerII7": "RingRunner117" }
  *
  * Matching is case-insensitive; unknown names pass through unchanged. The file
  * is read once and cached, so edits take effect on the next run.
