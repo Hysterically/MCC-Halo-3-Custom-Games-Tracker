@@ -1,9 +1,10 @@
 @echo off
 setlocal
-rem Assemble the single-file watcher launchers (v3 distribution - no zip):
-rem   dist\watcher-ready\Run-Watcher.bat  - group settings baked in, for the
-rem                                         pinned Discord #tracker-download post
-rem   dist\watcher-public\Run-Watcher.bat - no settings, the GitHub release asset
+rem Assemble the watcher launchers (v3 distribution):
+rem   dist\watcher-ready\Run-Tracker.bat + Install-Node.bat + H3-Tracker.zip
+rem       - group settings baked in; the zip is the pinned Discord attachment
+rem   dist\watcher-public\Run-Tracker.bat + Install-Node.bat
+rem       - no settings, the GitHub release assets
 rem The heavy lifting is in packaging\build-watcher.ps1; this wrapper just
 rem reads the live upload URL out of the gitignored watcher\watcher.env.
 
