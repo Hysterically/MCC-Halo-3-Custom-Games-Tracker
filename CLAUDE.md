@@ -61,6 +61,10 @@ the work done until both are updated:
      Latest is on the GitHub `releases/latest` endpoint.
    - Create the release and upload the asset named EXACTLY `h3-tracker-windows.zip`
      (the README's `releases/latest/download/h3-tracker-windows.zip` link depends on it).
+   - ALSO upload `watcher/watcher.mjs` as a second asset named EXACTLY `watcher.mjs` —
+     friends' watchers self-update from `releases/latest/download/watcher.mjs`. If the
+     watcher changed, bump `WATCHER_VERSION` inside it (that constant, not the git tag,
+     is what watchers and the bot compare).
    - `gh` is not installed; use the REST API with the token from `git credential fill`
      (via the **Bash** tool — never print the token). GitHub release publishing is
      durably authorized.

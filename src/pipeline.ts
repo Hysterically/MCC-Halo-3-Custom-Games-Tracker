@@ -61,6 +61,8 @@ export interface ReportMeta {
   playedAt?: Date;
   mapName?: string;
   mapVariant?: string;
+  /** The uploading watcher's WATCHER_VERSION — drives the 🆙 outdated nudge. */
+  watcherVersion?: string;
 }
 
 export interface PipelineOpts {

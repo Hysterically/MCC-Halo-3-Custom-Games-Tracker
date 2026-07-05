@@ -8,6 +8,7 @@ preview-*.png
 carnage.png
 /friends.env
 /watcher/watcher.env
+/watcher/last-upload.json
 /backups/
 /tmp-release.json
 
