@@ -4,12 +4,18 @@ Halo 3 Customs Tracker
 What this does
 --------------
 Watches your Halo MCC custom games and automatically posts each match result
-and the group's shared CSR leaderboard (a Halo 5-style rank, Bronze to Onyx)
-to Discord. There is one leaderboard for everyone - no matter whose PC records
-a match, it feeds the same standings.
+and the group's shared 4v4 CSR leaderboard (a Halo 5-style rank, Bronze to
+Onyx) to Discord. There is one leaderboard for everyone - no matter whose PC
+records a match, it feeds the same standings.
 
 Quick start - joining the group's shared leaderboard
 ----------------------------------------------------
+Note: if you just want your games to count toward a leaderboard someone else
+already runs, there is a lighter install than this zip - a single
+Run-Tracker.bat (the watcher) from the group's Discord or the project's
+GitHub releases page. This zip is the full tracker, for joining through the
+group's shared database or hosting a leaderboard yourself.
+
 1. Put the group's settings file (.env) next to Run-Tracker.bat. Ask the person who
    runs the leaderboard for it - it's shared privately (a Discord DM is fine),
    never posted publicly.
