@@ -13,12 +13,13 @@ leaderboard for Halo 3 custom games in MCC — posted straight to Discord.**
 
 ## Who this is for
 
-Small groups of friends who play Halo 3 customs regularly and want those
-games to *count*: a persistent, competitive leaderboard powered by
-**TrueSkill 2** — the rating model Halo 5's own matchmaking ran on — and
-displayed as the **Halo 5 CSR ladder** you already know, Bronze through Onyx
-with Champion at the top. Grind for Onyx, defend your spot, talk trash with
-receipts.
+MCC's ranked playlists are thinning out — these days, competitive Halo 3
+mostly lives in custom games with the people you actually play with. This
+tracker gives those customs the stakes ranked used to have: a persistent,
+competitive leaderboard powered by **TrueSkill 2** — the rating model Halo
+5's own matchmaking ran on — and displayed as the **Halo 5 CSR ladder** you
+already know, Bronze through Onyx with Champion at the top. Grind for Onyx,
+defend your spot, talk trash with receipts.
 
 Nothing about how you play changes. There's no queue bot in the middle — no
 [NeatQueue](https://www.neatqueue.com/)-style routine where everyone joins
