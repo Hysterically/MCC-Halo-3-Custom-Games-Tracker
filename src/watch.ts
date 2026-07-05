@@ -1,13 +1,14 @@
 /**
- * The watcher — the thing you actually run on the gaming PC.
+ * The tracker — the thing you actually run on the gaming PC (or the bot host).
  *
  *   npm run watch
  *
- * Watches the MCC carnage folder. Every time MCC drops a new
- * mpcarnagereport*.xml it is parsed; if it's a completed Halo 3 custom we
- * record it (deduped on GameUniqueId), recompute CSR (TrueSkill 2) from full
- * history, post a per-match summary to #game-results, and edit the live
- * leaderboard message in #leaderboard.
+ * Two ingest sources, one shared pipeline (see pipeline.ts):
+ *  - local:  chokidar on this PC's MCC carnage folder (the host playing);
+ *  - inbox:  friends' watcher uploads in #carnage-inbox (see inbox.ts),
+ *            enabled when DISCORD_BOT_TOKEN + H3_INBOX_CHANNEL_ID are set.
+ *
+ * With no inbox channel configured this is a plain local-folder watcher.
  *
  * On startup we intentionally do NOT auto-ingest historic reports — the
  * MCC folder accumulates years of XMLs and silently importing them would
@@ -18,30 +19,24 @@
 import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import chokidar from "chokidar";
-import { config } from "./config.ts";
-import {
-  openDb,
-  recordMatch,
-  matchCount,
-  matchesChrono,
-  setMatchResultsMsg,
-  setMatchResultsFmt,
-  hiddenXuids,
-} from "./db.ts";
-import { matchCsrChanges, matchWinChances, type CsrChange, type MatchWinChances } from "./trueskill2.ts";
-import { parseCarnageFile, type CarnageReport } from "./parseCarnage.ts";
-import { findMapInfo } from "./mapInfo.ts";
-import { postCsrMatchResultWithControls, upsertCsrLeaderboard, startBot } from "./discord.ts";
+import { config, inboxConfig } from "./config.ts";
+import { openDb, matchCount } from "./db.ts";
+import type { CsrChange } from "./trueskill2.ts";
+import type { CarnageReport } from "./parseCarnage.ts";
+import { upsertCsrLeaderboard, startBot } from "./discord.ts";
 import { healStaleResults } from "./heal.ts";
 import { checkForUpdate } from "./updateCheck.ts";
-import { RESULTS_FMT_VERSION } from "./version.ts";
 import { statusBar, banner, hint, c } from "./term.ts";
 import { categorize, CATEGORY_LABEL } from "./category.ts";
 import { displayName } from "./aliases.ts";
 import { csrText } from "./csr.ts";
+import { createPipeline, type IngestSource } from "./pipeline.ts";
+import { startInbox } from "./inbox.ts";
 
 const isCarnage = (f: string): boolean =>
   /carnage/i.test(f) && extname(f).toLowerCase() === ".xml";
+
+const inboxEnabled = Boolean(config.discordBotToken && inboxConfig.channelId);
 
 // The remote DB lives in AWS and may be cold; opening it + counting matches is
 // a couple of network round-trips. Print one line first so the window isn't
@@ -61,13 +56,18 @@ banner("Halo 3 Customs Tracker", [
   // host's instance serves /leaderboard for everyone. Omit the row entirely
   // rather than print an "off" that reads like a failure.
   ...(config.discordBotToken ? [["Bot", c.green("on")] as [string, string]] : []),
+  ["Inbox", inboxEnabled ? c.green("on") : c.dim("off")],
   ["Matches", `${startCount} recorded`],
 ]);
 
-// Short, config-aware "how to use it" note for friends who just ran the exe.
-const usage = ["Leave this window open while you play customs — results post to Discord automatically. Press Ctrl+C to quit."];
+const usage = [
+  "Leave this window open — local games AND friends' inbox uploads post to Discord automatically. Press Ctrl+C to quit.",
+];
 if (config.discordBotToken) {
   usage.push("In Discord: /leaderboard · /stats <player>   (admins: Void/Exclude buttons on each result post)");
+}
+if (inboxConfig.channelId && !config.discordBotToken) {
+  usage.push("H3_INBOX_CHANNEL_ID is set but DISCORD_BOT_TOKEN isn't — the inbox listener needs the bot token, so it stays off.");
 }
 if (!config.discordResultsWebhookUrl && !config.discordLeaderboardWebhookUrl && !config.discordBotToken) {
   usage.push("Discord isn't set up yet — ask your host for the group .env, or run setup.");
@@ -75,36 +75,6 @@ if (!config.discordResultsWebhookUrl && !config.discordLeaderboardWebhookUrl && 
 hint(usage);
 
 statusBar.setState({ totalMatches: startCount });
-
-/** Parse one file and record it if it's a tracked match. Returns it on success. */
-async function ingest(path: string): Promise<CarnageReport | null> {
-  let report: CarnageReport;
-  try {
-    report = await parseCarnageFile(path);
-  } catch (e) {
-    console.warn(`[skip] ${path}: ${(e as Error).message}`);
-    return null;
-  }
-  if (!report.tracked) return null;
-  // Best-effort map lookup: the theater film lands a few seconds after the
-  // XML, so poll for it briefly before recording.
-  try {
-    const map = await findMapInfo(config.carnageDir, report.playedAt.getTime(), 45_000);
-    report.mapName = map.mapName;
-    report.mapVariant = map.mapVariant;
-  } catch {
-    // no map info — the post and the DB row just omit it
-  }
-  try {
-    if (!(await recordMatch(db, report))) return null; // dupe — already recorded (here or another instance)
-  } catch (e) {
-    // A transient DB error (e.g. the shared remote DB hiccuped) shouldn't kill
-    // the watcher — skip this file; the next event or a restart re-ingests it.
-    console.error(`[db] record failed for ${path}: ${(e as Error).message}`);
-    return null;
-  }
-  return report;
-}
 
 /** Short footer label for the status bar: gametype on map — winner. */
 const footerLabel = (r: CarnageReport): string =>
@@ -118,11 +88,16 @@ const footerLabel = (r: CarnageReport): string =>
  * never break the column math; colors are no-ops off a TTY, so a redirected
  * log stays plain text.
  */
-function matchBlock(r: CarnageReport, changes: Map<string, CsrChange> | null): string {
+function matchBlock(
+  r: CarnageReport,
+  changes: Map<string, CsrChange> | null,
+  source: IngestSource,
+): string {
   const cat = CATEGORY_LABEL[categorize(r)];
+  const via = source === "inbox" ? c.dim(" · via inbox") : "";
   const head = `[match] ${c.bold(r.gameTypeName)}${r.mapName ? ` on ${r.mapName}` : ""} · ${cat}${c.dim(
     ` · ${r.players.length} players`,
-  )}`;
+  )}${via}`;
   const winnerNames = r.winners.map(displayName).join(", ") || "—";
 
   const rated = changes?.size ? r.players.filter((p) => changes.has(p.xuid)) : [];
@@ -182,12 +157,19 @@ function matchBlock(r: CarnageReport, changes: Map<string, CsrChange> | null): s
   return lines.join("\n");
 }
 
-// --- startup -------------------------------------------------------------
-// No auto-backfill: historic reports already in the folder are ignored.
-// Run `npm run backfill` for intentional historic ingest. The banner above
-// already reports which channels/bot are active, so no per-channel preamble.
+// --- shared pipeline ---------------------------------------------------------
+// Both sources (local folder + inbox) flow through here; onRecorded/onPost keep
+// the console block and the status bar identical no matter where a game came from.
 
-// --- optional bot ----------------------------------------------------------
+const pipeline = createPipeline(db, {
+  onRecorded: (report, csrChanges, source) => {
+    console.log(matchBlock(report, csrChanges, source));
+    statusBar.recordMatch(footerLabel(report), CATEGORY_LABEL[categorize(report)]);
+  },
+  onPost: (ok) => statusBar.setLastPost(ok),
+});
+
+// --- optional bot (slash commands, buttons) ----------------------------------
 if (config.discordBotToken) {
   statusBar.setBot("connecting");
   startBot(
@@ -197,6 +179,15 @@ if (config.discordBotToken) {
     config.discordResultsWebhookUrl,
     config.discordLeaderboardWebhookUrl,
   ).catch((e) => console.error("[discord] bot failed to start:", e));
+}
+
+// --- inbox listener ------------------------------------------------------------
+// A second gateway client — separate from the slash-command client in
+// discord.ts, which is built without the MessageContent intent.
+if (inboxEnabled) {
+  startInbox(config.discordBotToken!, inboxConfig.channelId!, pipeline, {
+    backlogMessages: inboxConfig.backlogMessages,
+  }).catch((e) => console.error("[inbox] listener failed to start:", e));
 }
 
 // Tell the user if their build is behind the latest release (best-effort).
@@ -220,7 +211,7 @@ if (config.discordResultsWebhookUrl) {
   );
 }
 
-// --- live watch ------------------------------------------------------------
+// --- live local watch -----------------------------------------------------------
 const seen = new Map<string, number>(); // path -> last mtimeMs handled (dedupe rapid events)
 
 const watcher = chokidar.watch(config.carnageDir, {
@@ -235,51 +226,13 @@ async function onFile(path: string): Promise<void> {
   if (seen.get(path) === m) return;
   seen.set(path, m);
 
-  const report = await ingest(path);
-  if (!report) return;
-
-  // Per-player CSR changes for the result post — replayed from the recorded
-  // history, so they match exactly what the leaderboard will apply.
-  // Best effort: a DB hiccup just posts the result without the ratings.
-  const history = await matchesChrono(db);
-  const hidden = await hiddenXuids(db);
-  let csrChanges: Map<string, CsrChange> | null = null;
-  let winChances: MatchWinChances | null = null;
   try {
-    csrChanges = matchCsrChanges(history, report.matchId, hidden);
-    winChances = matchWinChances(history, report.matchId);
+    const out = await pipeline.ingestLocalFile(path);
+    if (out.status === "invalid") console.warn(`[skip] ${path}: ${out.reason}`);
   } catch (e) {
-    console.error("[ts2] CSR change computation failed:", (e as Error).message);
-  }
-
-  console.log(matchBlock(report, csrChanges));
-  statusBar.recordMatch(footerLabel(report), CATEGORY_LABEL[categorize(report)]);
-
-  try {
-    // Capture the #game-results message id so the game can later be voided via
-    // /delete or the Void button. Posts with buttons when the bot's app-owned
-    // webhook is available, else a plain post to the configured webhook.
-    const msgId = await postCsrMatchResultWithControls(
-      db,
-      report,
-      csrChanges ?? undefined,
-      winChances ?? undefined,
-    );
-    if (msgId) {
-      await setMatchResultsMsg(db, report.matchId, msgId);
-      // Stamp the layout version so the startup heal never re-styles a fresh post.
-      await setMatchResultsFmt(db, report.matchId, RESULTS_FMT_VERSION);
-      statusBar.setLastPost(true);
-    }
-  } catch (e) {
-    statusBar.setLastPost(false);
-    console.error("[discord] result post failed:", (e as Error).message);
-  }
-  try {
-    await upsertCsrLeaderboard(config.discordLeaderboardWebhookUrl, db);
-  } catch (e) {
-    statusBar.setLastPost(false);
-    console.error("[discord] leaderboard upsert failed:", (e as Error).message);
+    // A transient DB error (e.g. the shared remote DB hiccuped) shouldn't kill
+    // the watcher — skip this file; the next event or a restart re-ingests it.
+    console.error(`[db] record failed for ${path}: ${(e as Error).message}`);
   }
 }
 

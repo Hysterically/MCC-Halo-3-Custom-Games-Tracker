@@ -4,14 +4,32 @@ Halo 3 (MCC) custom-games tracker: watches the local `mpcarnagereport*.xml` file
 records matches, computes ELO + TrueSkill 2 CSR, and posts a leaderboard +
 per-match results to Discord.
 
-## One implementation: TypeScript
+## Two pieces, one flow
 
-- **`src/`** — the tracker, run with `tsx` (e.g. `npm run watch`). This is both
-  the live install (runs from source at the repo root) AND what ships to users.
-- The former native C++ port (`cpp/`) was removed 2026-07-02; the TS source zip
-  is now the sole distribution artifact. There is no parity requirement anymore.
+- **`src/`** — the tracker (bot host + local watch), run with `tsx` (`npm run watch`).
+  Two ingest sources feed one shared pipeline: this PC's MCC carnage folder (chokidar)
+  and, if configured, the `#carnage-inbox` channel that friends' watchers upload to.
+  See `src/pipeline.ts` (shared record → rate → post → leaderboard) and `src/inbox.ts`
+  (Discord listener + backlog scan). With `H3_INBOX_CHANNEL_ID` unset it's a plain
+  local-folder watcher.
+- **`watcher/`** — the friends' install (repo-root folder, promoted from `next/watcher`
+  2026-07-05). A zero-dependency Node 18+ script (`watcher.mjs`, no `npm install`, no TS)
+  that watches MCC's carnage folder and uploads each finished-custom XML to
+  `#carnage-inbox` via a write-only webhook, with an `h3meta` line carrying matchId,
+  played-at mtime, and map breadcrumbs. `Run-Watcher.bat` launches it; `watcher.env`
+  holds the webhook URL.
+- The former native C++ port (`cpp/`) was removed 2026-07-02.
 
 Type-check before shipping: `npm run typecheck`.
+
+### One-time Discord setup for the inbox (still TODO on the server)
+
+- Create private `#carnage-inbox`; friends must NOT have read access.
+- Add a webhook in that channel → the URL goes in friends' `watcher.env` as `WEBHOOK_URL`.
+- Discord dev portal → bot application → **Message Content Intent: ON**.
+- Bot needs View Channel + Read Message History + Add Reactions in that channel.
+- Host `.env`: `H3_INBOX_CHANNEL_ID=<channel id>` (optional: `H3_INBOX_BACKLOG_MESSAGES`,
+  default 300).
 
 ## Distribution
 
