@@ -254,13 +254,20 @@ export function formatPlayerStats(
   );
 }
 
+/**
+ * The leaderboard line under a result post. Only categories in
+ * BOARD_CATEGORIES have a live board; a 2v2/FFA game is a recognized format
+ * whose board was retired, so it must not claim to count toward one.
+ */
+function boardTag(cat: Category): string {
+  if (BOARD_CATEGORIES.includes(cat)) return `_Counted toward **${CATEGORY_LABEL[cat]}** leaderboard._`;
+  if (cat === "other") return "_Off-format — not counted toward a leaderboard._";
+  return `_${CATEGORY_LABEL[cat]} — not counted toward a leaderboard._`;
+}
+
 /** Short caption posted above the rendered carnage image. */
 export function formatMatchCaption(r: CarnageReport): string {
-  const cat = boardCategory(r);
-  const tag =
-    cat === "other"
-      ? "_Off-format — not counted toward a leaderboard._"
-      : `_Counted toward **${CATEGORY_LABEL[cat]}** leaderboard._`;
+  const tag = boardTag(boardCategory(r));
   const mapLabel = r.mapVariant || r.mapName;
   const header = `${r.gameTypeName || "Custom Game"}${mapLabel ? ` on ${mapLabel}` : ""}`;
   return `**${header}**\n${tag}`;
@@ -288,11 +295,7 @@ function formatEloLine(r: CarnageReport, changes?: Map<string, EloChange>): stri
 
 /** Detailed per-match summary: gametype, teams or FFA, K/D/A, winner. */
 export function formatMatchResult(r: CarnageReport, eloChanges?: Map<string, EloChange>): string {
-  const cat = boardCategory(r);
-  const tag =
-    cat === "other"
-      ? "_Off-format — not counted toward a leaderboard._"
-      : `_Counted toward **${CATEGORY_LABEL[cat]}** leaderboard._`;
+  const tag = boardTag(boardCategory(r));
   const map = [r.mapName, r.mapVariant].filter(Boolean).join(" — ");
   const header =
     `🎮 **${r.gameTypeName || "Custom Game"}** · ${r.players.length} ${
@@ -661,9 +664,27 @@ export async function postCsrMatchResultWithControls(
   win?: MatchWinChances,
 ): Promise<string | undefined> {
   const appUrl = await kvGet(db, APP_WEBHOOK_KEY);
-  const url = appUrl ?? config.discordResultsWebhookUrl;
-  const components = appUrl ? matchButtons(report.matchId) : undefined;
-  return postCsrMatchResult(url, report, csrChanges, win, components);
+  if (appUrl) {
+    try {
+      return await postCsrMatchResult(appUrl, report, csrChanges, win, matchButtons(report.matchId));
+    } catch (e) {
+      // A server admin can delete the app-owned webhook out from under the
+      // cache; without this, every future post 404s forever and the configured
+      // webhook is never used. Drop the cache and fall through — the next
+      // startup's ensureAppResultsWebhook re-provisions the buttons.
+      if (!isWebhookGone(e)) throw e;
+      await kvDelete(db, APP_WEBHOOK_KEY);
+      console.error(
+        "[discord] app-owned results webhook is gone — cache dropped, posting via the configured webhook (buttons return after a restart)",
+      );
+    }
+  }
+  return postCsrMatchResult(config.discordResultsWebhookUrl, report, csrChanges, win);
+}
+
+/** True when a webhook call failed because the webhook itself no longer exists. */
+function isWebhookGone(e: unknown): boolean {
+  return e instanceof Error && /^Discord webhook (edit )?404\b/.test(e.message);
 }
 
 /** Per-category CSR rows, ranked best-first — the shape the PNG renderer wants. */
@@ -1157,18 +1178,33 @@ export async function startBot(
     // hang/throw there can't leave the footer stuck on "connecting".
     statusBar.setBot("online");
     console.log(`[discord] bot online as ${c.user.tag}`);
-    const rest = new REST({ version: "10" }).setToken(token);
-    if (guildId) {
-      await rest.put(Routes.applicationGuildCommands(c.user.id, guildId), { body: COMMANDS });
-    } else {
-      await rest.put(Routes.applicationCommands(c.user.id), { body: COMMANDS });
+    // client.once doesn't await async listeners, so anything thrown from here
+    // becomes an unhandled rejection that kills the whole tracker (watcher,
+    // inbox and all). Each startup step is contained so one failing doesn't
+    // take the process down or skip the steps after it.
+    try {
+      const rest = new REST({ version: "10" }).setToken(token);
+      if (guildId) {
+        await rest.put(Routes.applicationGuildCommands(c.user.id, guildId), { body: COMMANDS });
+      } else {
+        await rest.put(Routes.applicationCommands(c.user.id), { body: COMMANDS });
+      }
+      console.log("[discord] commands registered");
+    } catch (e) {
+      console.error(
+        "[discord] slash-command registration failed (bot stays up, commands may be stale):",
+        (e as Error).message,
+      );
     }
-    console.log("[discord] commands registered");
     // Provision our own webhook in the results channel so per-match posts can
     // carry the Void/Exclude buttons (plain webhooks strip components).
     if (resultsWebhookUrl) {
-      const url = await ensureAppResultsWebhook(token, c.user.id, db);
-      if (url) console.log("[discord] results buttons enabled (app-owned webhook)");
+      try {
+        const url = await ensureAppResultsWebhook(token, c.user.id, db);
+        if (url) console.log("[discord] results buttons enabled (app-owned webhook)");
+      } catch (e) {
+        console.error("[discord] app webhook provisioning failed:", (e as Error).message);
+      }
     }
     startRecapScheduler(db);
   });
