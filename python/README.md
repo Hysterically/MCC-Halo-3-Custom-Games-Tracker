@@ -139,3 +139,21 @@ parity with the production TypeScript engine on fixture histories
 7. The Halo 3 adapter's default count weights are hand-picked seeds on the
    tracker's rating scale, meant to be refined with `fit` — the paper
    publishes no count parameters.
+
+## Numerical accuracy
+
+The Gaussian primitives are implemented to hold full double precision over
+the whole range the EP updates can visit (see `trueskill2/gaussian.py`):
+
+* `cdf` uses `erfc`, keeping relative accuracy in the left tail to z ≈ −37
+  (the common `0.5*(1+erf(x/√2))` form silently loses **all** precision below
+  z ≈ −8 — right where big upsets are scored — which put percent-level errors
+  into classic implementations' `v`/`w` corrections).
+* Beyond the reach of `erfc`, the hazard `φ/Φ` and the win/draw corrections
+  switch to Mills-ratio asymptotic series / ratio forms, so `w < 1` strictly
+  and updates stay finite for arbitrarily extreme observations (a naive
+  implementation divides by zero once the truncation denominator underflows).
+* `ppf` is Acklam's approximation polished with one Halley step (~1e-15).
+
+The tests pin these down with quadrature, Mills-ratio bounds, and
+representable-reference comparisons straddling every branch switch.

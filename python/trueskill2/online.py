@@ -179,9 +179,12 @@ class OnlineTrueSkill2:
             (m1, v1, w1), (m2, v2, w2) = stats
             eps = mp.pair_margin(w1 + w2)
             s = math.sqrt(v1 + v2)
-            p1 = 1.0 - cdf((eps - (m1 - m2)) / s)
-            p2 = cdf((-eps - (m1 - m2)) / s)
-            draw = max(0.0, 1.0 - p1 - p2)
+            d = m1 - m2
+            # cdf((d-eps)/s) rather than 1-cdf((eps-d)/s): identical
+            # analytically, but keeps relative precision when p1 is tiny.
+            p1 = cdf((d - eps) / s)
+            p2 = cdf((-d - eps) / s)
+            draw = max(0.0, cdf((eps - d) / s) - cdf((-eps - d) / s))
             return MatchPrediction(
                 teams=[TeamPrediction(0, p1), TeamPrediction(1, p2)], draw_prob=draw
             )
@@ -193,7 +196,7 @@ class OnlineTrueSkill2:
                 if a == b:
                     continue
                 eps = mp.pair_margin(wa + wb)
-                prod *= 1.0 - cdf((eps - (ma - mb)) / math.sqrt(va + vb))
+                prod *= cdf(((ma - mb) - eps) / math.sqrt(va + vb))
             scores.append(prod)
         total = sum(scores)
         if total <= 0.0:

@@ -18,12 +18,34 @@ class TestNormal(unittest.TestCase):
         self.assertAlmostEqual(cdf(-1.96), 1.0 - 0.9750021048517795, places=10)
 
     def test_ppf_roundtrip(self):
-        for p in (0.001, 0.01, 0.1, 0.3, 0.5, 0.7, 0.9, 0.99, 0.999):
-            self.assertAlmostEqual(cdf(ppf(p)), p, places=8)
+        for p in (1e-9, 1e-6, 0.001, 0.01, 0.1, 0.3, 0.5, 0.7, 0.9, 0.99, 0.999):
+            self.assertLess(abs(cdf(ppf(p)) - p), 1e-13 * p + 1e-16)
 
     def test_ppf_edges(self):
         self.assertEqual(ppf(0.0), -math.inf)
         self.assertEqual(ppf(1.0), math.inf)
+
+    def test_cdf_left_tail_mills_bounds(self):
+        # phi(z) * (-z)/(z^2+1) < Phi(z) < phi(z)/(-z) for all z < 0.
+        # The naive 0.5*(1+erf) form fails this below z ~ -8 (it returns 0).
+        for z in (-6.0, -8.0, -10.0, -15.0, -20.0, -30.0, -37.0):
+            c = cdf(z)
+            self.assertGreater(c, pdf(z) * (-z) / (z * z + 1.0))
+            self.assertLess(c, pdf(z) / (-z))
+
+    def test_hazard_mills_bounds_and_continuity(self):
+        # -z < hazard(z) < -z + 1/(-z) for z < 0, arbitrarily deep.
+        z = -4.0
+        while z >= -200.0:
+            h = v_win(z, 0.0)  # hazard via the public correction
+            self.assertGreater(h, -z)
+            self.assertLess(h, -z + 1.0 / (-z))
+            z -= 1.7
+        # The asymptotic-series branch agrees with the direct ratio at the
+        # switch point (z = -30, where erfc is still exact).
+        z = -30.0
+        direct = pdf(z) / (0.5 * math.erfc(-z / math.sqrt(2.0)))
+        self.assertLess(abs(v_win(z, 0.0) - direct) / direct, 1e-10)
 
 
 class TestGaussian(unittest.TestCase):
@@ -87,11 +109,42 @@ class TestTruncCorrections(unittest.TestCase):
             self.assertAlmostEqual(var, sigma * sigma * (1.0 - w_draw(t, m)), places=4)
 
     def test_win_tail_stability(self):
-        # Deep in the losing tail the corrections must stay finite.
-        v = v_win(-40.0, 0.0)
-        w = w_win(-40.0, 0.0)
-        self.assertTrue(math.isfinite(v))
-        self.assertTrue(0.0 <= w <= 1.0)
+        # Deep in the losing tail the corrections must stay finite, with w
+        # strictly below 1 (w == 1 makes the EP update divide by zero) and
+        # sigma^2 * (1 - w) -> the exponential-tail variance 1/x^2.
+        for x in (-8.0, -20.0, -40.0, -100.0, -1e4, -1e8):
+            v = v_win(x, 0.0)
+            w = w_win(x, 0.0)
+            self.assertTrue(math.isfinite(v))
+            self.assertLess(w, 1.0)
+            self.assertGreater(w, 0.0)
+            if -1e4 <= x <= -20.0:  # asymptote holds; 1-w still resolvable
+                self.assertAlmostEqual((1.0 - w) * x * x, 1.0, delta=0.02)
+
+    def test_draw_tail_matches_direct_formula(self):
+        # At at=28, margin=0.5 the denominator Phi(a)-Phi(b) ~ 1e-166 is below
+        # the guard, so the Mills-ratio tail path runs; the direct formula is
+        # still representable in doubles here and serves as the reference.
+        at, margin = 28.0, 0.5
+        a, b = margin - at, -margin - at
+        phi = lambda x: 0.5 * math.erfc(-x / math.sqrt(2.0))
+        z0 = phi(a) - phi(b)
+        v_ref = (pdf(b) - pdf(a)) / z0
+        w_ref = v_ref * v_ref + (a * pdf(a) - b * pdf(b)) / z0
+        self.assertLess(abs(v_draw(at, margin) - v_ref) / abs(v_ref), 1e-9)
+        self.assertLess(abs(w_draw(at, margin) - w_ref) / (1.0 - w_ref), 1e-6)
+        self.assertAlmostEqual(v_draw(-at, margin), -v_draw(at, margin), places=12)
+
+    def test_draw_tail_stability(self):
+        # Far beyond double range for the direct formula: finite, w < 1, and
+        # the mean correction pulls the difference back to the near boundary.
+        for t, margin in ((45.0, 1.0), (-45.0, 1.0), (60.0, 0.25), (300.0, 2.0)):
+            v = v_draw(t, margin)
+            w = w_draw(t, margin)
+            self.assertTrue(math.isfinite(v))
+            self.assertLess(w, 1.0)
+            # posterior mean ~ t + v lands within the margin (near the boundary)
+            self.assertLess(abs(t + v), margin + 0.1)
 
 
 if __name__ == "__main__":

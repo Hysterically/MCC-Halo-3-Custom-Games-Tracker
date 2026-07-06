@@ -73,6 +73,27 @@ class TestOneVsOne(unittest.TestCase):
             self.assertAlmostEqual(posts[pid].skill.mu, mu, places=6)
             self.assertAlmostEqual(posts[pid].skill.sigma, sig, places=6)
 
+    def test_colossal_upset_stays_finite(self):
+        """A win over an opponent rated dozens of sigmas higher must produce a
+        finite, direction-correct update (the naive erf-based tail collapsed
+        to w = 1 here, dividing by zero inside the EP truncation update)."""
+        params = classic_params(draw_probability=None, draw_margin=1e-3)
+        for gap in (20.0, 40.0, 70.0):
+            weak = Gaussian.from_mu_sigma(MU0, 1.0)
+            strong = Gaussian.from_mu_sigma(MU0 + gap * BETA, 1.0)
+            posts = rate_match(
+                match_1v1(),
+                {"a": MemberPrior(skill=Gaussian(weak.pi, weak.tau)),
+                 "b": MemberPrior(skill=Gaussian(strong.pi, strong.tau))},
+                params,
+            )
+            for pid in ("a", "b"):
+                self.assertTrue(math.isfinite(posts[pid].skill.mu))
+                self.assertTrue(math.isfinite(posts[pid].skill.sigma))
+                self.assertGreater(posts[pid].skill.sigma, 0.0)
+            self.assertGreater(posts["a"].skill.mu, MU0)
+            self.assertLess(posts["b"].skill.mu, MU0 + gap * BETA)
+
     def test_upset_moves_more(self):
         """Beating a stronger player moves ratings further than the reverse."""
         params = classic_params()
