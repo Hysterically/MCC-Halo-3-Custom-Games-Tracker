@@ -12,7 +12,7 @@
  */
 
 import type { StoredMatch } from "./db.ts";
-import { boardCategory } from "./category.ts";
+import { BOARD_CATEGORIES, boardCategory } from "./category.ts";
 
 export interface Rating {
   xuid: string;
@@ -148,7 +148,8 @@ export function matchEloChanges(
   if (idx === -1) return null;
   const match = matches[idx];
   const cat = boardCategory(match);
-  if (cat === "other") return null;
+  // Only live boards get deltas — see matchCsrChanges in trueskill2.ts.
+  if (!BOARD_CATEGORIES.includes(cat)) return null;
 
   const hist = matches.slice(0, idx + 1).filter((m) => boardCategory(m) === cat);
   const before = new Map(
