@@ -52,6 +52,7 @@ CSR (Bronze through Onyx, with Champion for the top of the board):
 - [Configuration reference](#configuration-reference)
 - [Repository layout](#repository-layout)
 - [Development](#development)
+- [License](#license)
 
 ## Features
 
@@ -258,3 +259,14 @@ npm run typecheck  # type-check before shipping
 carnage image to your results webhook so renderer changes can be checked
 without playing a match; `Test-Game.bat` drops a sample XML into a watched
 folder to exercise the whole pipeline.
+
+## License
+
+The tracker's own code is released under the [MIT License](LICENSE) — free to
+use, modify, and redistribute.
+
+The bundled art assets in `assets/` (Halo rank emblems, the MCC icon) and the
+Blender Pro fonts in `assets/fonts/` are **not** covered by that license. They
+remain the property of their respective owners (343 Industries / Microsoft and
+the font's publisher) and are included here only for this non-commercial fan
+project. If you fork or redistribute, review those assets' terms yourself.

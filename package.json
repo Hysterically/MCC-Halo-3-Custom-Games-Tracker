@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Tracks Halo 3 (MCC) custom games from local mpcarnagereport*.xml and posts an ELO leaderboard to Discord.",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "inspect": "tsx src/inspect.ts",
