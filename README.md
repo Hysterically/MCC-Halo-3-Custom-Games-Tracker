@@ -121,40 +121,44 @@ so the watcher can tell the tracker is alive.
 
 ## Join an existing leaderboard
 
-For players joining a group whose leaderboard is already hosted. Requirements:
-Windows 10/11, Halo: MCC, Node.js 18+.
+For players joining a group whose leaderboard is already hosted (you need
+Windows 10/11 and Halo: MCC). The whole install is **one file in a folder** —
+nothing to extract, no account to make, and if anything is missing the window
+tells you what to do.
 
-1. **Install Node.js** if you don't have it —
-   [nodejs.org](https://nodejs.org) → the LTS installer, or download
+1. **Get `Run-Tracker.bat` and put it in its own folder** (e.g.
+   `Documents\H3 Tracker`). The easy way: use the copy your group shares in
+   its own Discord — it has your group's settings baked in and needs zero
+   setup. No shared copy? Download the
+   [plain one](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/releases/latest/download/Run-Tracker.bat)
+   and ask whoever hosts the leaderboard for your group's settings — on first
+   run the window shows exactly where to paste them.
+2. **Double-click it.** First time only: if the window says Node.js is
+   missing, download
    [`Install-Node.bat`](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/releases/latest/download/Install-Node.bat)
-   and let it do the work. (The watcher is plain source code rather than an
-   .exe — Node.js runs it, and you can open the file and read every line.)
-2. **Download
-   [`Run-Tracker.bat`](https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker/releases/latest/download/Run-Tracker.bat)**
-   and put it in its own folder anywhere. That single file is the whole
-   install — nothing to extract.
-3. **Add your group's upload settings** — ask whoever hosts the leaderboard
-   for the group's inbox webhook line. (If your group shares a preconfigured
-   copy of `Run-Tracker.bat` on Discord, it has the settings baked in already —
-   grab that one and skip this step.)
-4. **Double-click `Run-Tracker.bat`** whenever you play customs and leave the
-   window open. Results appear in Discord on their own.
+   into the same folder, run it once, then start `Run-Tracker.bat` again.
+   (Node.js is the free runtime the tracker runs on — the tracker itself is
+   plain, readable source code, not an .exe.)
+3. **Leave the window open while you play customs.** That's the whole job —
+   match results and rank changes land in Discord on their own.
 
 Good to know:
 
 - One person in the lobby running it is enough — the match report lists
   everyone, and each game is counted exactly once.
-- The only secret you hold is a write-only webhook URL; the watcher can't read
-  the channel it posts to.
-- The watcher keeps itself current: when a new version ships it offers the
-  update in its own window (press <kbd>U</kbd> + <kbd>Enter</kbd>) — no
+- The only secret you hold is a write-only upload address; the watcher can't
+  read anything in your Discord.
+- Updates take care of themselves: when a new version ships, the watcher
+  offers it in its own window (press <kbd>U</kbd> + <kbd>Enter</kbd>) — no
   re-downloading.
 
 ## Host your own leaderboard
 
-The watcher only *feeds* a tracker — to run a leaderboard for your own group,
-run the tracker host yourself. It's a Node/TypeScript app; the host machine
-(or a cloud box) should stay up so the leaderboard does.
+This is the technical part — but only **one person per group** ever needs to
+do it; everyone else just [joins](#join-an-existing-leaderboard). The watcher
+only *feeds* a tracker — to run a leaderboard for your own group, run the
+tracker host yourself. It's a Node/TypeScript app; the host machine (or a
+cloud box) should stay up so the leaderboard does.
 
 ```sh
 git clone https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker.git
