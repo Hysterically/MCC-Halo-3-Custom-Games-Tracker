@@ -7,6 +7,17 @@ data/
 preview-*.png
 carnage.png
 /friends.env
+/watcher/watcher.env
+/watcher/last-upload.json
 /backups/
 /tmp-release.json
 
+# Local rating R&D archive (contains real player data in games.json exports).
+/research/
+
+# Owner-local files that must never be committed. CLAUDE.local.md holds
+# private maintainer notes (CLAUDE.md is the public, committed version);
+# aliases.json holds the group's real display mapping. Keep other personal
+# ignores in .git/info/exclude, not here.
+CLAUDE.local.md
+/aliases.json

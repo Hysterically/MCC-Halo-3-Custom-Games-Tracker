@@ -17,7 +17,7 @@
  */
 
 import type { StoredMatch } from "./db.ts";
-import { boardCategory } from "./category.ts";
+import { BOARD_CATEGORIES, boardCategory } from "./category.ts";
 import { csrFromSkill, CHAMPION_THRESHOLD, type Csr } from "./csr.ts";
 
 // ---------------------------------------------------------------------------
@@ -574,7 +574,9 @@ export function matchCsrChanges(
   if (idx === -1) return null;
   const match = matches[idx];
   const cat = boardCategory(match);
-  if (cat === "other") return null;
+  // Only live boards get deltas: a 2v2/FFA game would otherwise be rated
+  // against a phantom replay of its retired board.
+  if (!BOARD_CATEGORIES.includes(cat)) return null;
 
   const hist = matches.slice(0, idx + 1).filter((m) => boardCategory(m) === cat);
   const before = new Map(rateCategory(hist.slice(0, -1)).map((r) => [r.xuid, r.skill]));
@@ -632,7 +634,9 @@ export function matchWinChances(
   const match = matches[idx];
   if (!match.teamsEnabled) return null;
   const cat = boardCategory(match);
-  if (cat === "other") return null;
+  // Same live-board gate as matchCsrChanges: the bar's team averages come from
+  // that board's replay, which no longer exists for retired categories.
+  if (!BOARD_CATEGORIES.includes(cat)) return null;
 
   const hist = matches.slice(0, idx + 1).filter((m) => boardCategory(m) === cat);
   const pre = new Map(rateCategory(hist.slice(0, -1)).map((r) => [r.xuid, r]));
