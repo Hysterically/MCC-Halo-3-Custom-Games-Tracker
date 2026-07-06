@@ -21,3 +21,7 @@ carnage.png
 # ignores in .git/info/exclude, not here.
 CLAUDE.local.md
 /aliases.json
+
+# Python bytecode (python/ TrueSkill 2 package)
+__pycache__/
+*.pyc
