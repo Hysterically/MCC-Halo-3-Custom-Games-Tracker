@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trueskill2"
+version = "1.0.0"
+description = "TrueSkill 2 (Minka, Cleven & Zaykov 2018) — full model, pure stdlib"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+[tool.setuptools]
+packages = ["trueskill2"]

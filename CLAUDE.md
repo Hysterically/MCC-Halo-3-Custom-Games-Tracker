@@ -16,6 +16,11 @@ per-match results to Discord.
 - **`watcher/watcher.mjs`** — the friend install: a zero-dependency one-file
   watcher that uploads carnage reports to the group's `#carnage-inbox`
   webhook, which the tracker host reads.
+- **`python/`** — a standalone, pure-stdlib Python implementation of the FULL
+  TrueSkill 2 paper (squads, experience, kill/death count observations, quits,
+  mode correlation, batch/TTT inference, Rprop fitting). Research/analysis
+  companion — the live ladder still runs on `src/trueskill2.ts`. Tests:
+  `npm run test:py`; paper→code map in `python/README.md`.
 - Type-check before shipping: `npm run typecheck`.
 
 ## Private files — never commit these

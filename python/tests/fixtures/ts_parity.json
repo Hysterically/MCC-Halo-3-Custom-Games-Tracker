@@ -1,0 +1,1122 @@
+{
+  "matches": [
+    {
+      "matchId": "fixture-4v4-0",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700003600000,
+      "winningTeamId": 0,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-4v4-1",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700007200000,
+      "winningTeamId": 1,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-4v4-2",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700010800000,
+      "winningTeamId": 1,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-4v4-3",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700014400000,
+      "winningTeamId": 0,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-4v4-4",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700018000000,
+      "winningTeamId": null,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-4v4-5",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700021600000,
+      "winningTeamId": 0,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-4v4-6",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700025200000,
+      "winningTeamId": 0,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-4v4-7",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700028800000,
+      "winningTeamId": 1,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-4v4-8",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700032400000,
+      "winningTeamId": 0,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-4v4-9",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700036000000,
+      "winningTeamId": 0,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 0,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": 1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-3team",
+      "gameTypeName": "Slayer",
+      "teamsEnabled": true,
+      "playedAt": 1700039600000,
+      "winningTeamId": 2,
+      "durationSeconds": 600,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": 2,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": 2,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800015838",
+          "gamertag": "Player2",
+          "teamId": 0,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": 1,
+          "standing": 3,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800000000",
+          "gamertag": "Player0",
+          "teamId": 1,
+          "standing": 3,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    },
+    {
+      "matchId": "fixture-ffa",
+      "gameTypeName": "Rumble Pit",
+      "teamsEnabled": false,
+      "playedAt": 1700043200000,
+      "winningTeamId": null,
+      "durationSeconds": 480,
+      "excluded": false,
+      "players": [
+        {
+          "xuid": "2533274800055433",
+          "gamertag": "Player7",
+          "teamId": -1,
+          "standing": 1,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800039595",
+          "gamertag": "Player5",
+          "teamId": -1,
+          "standing": 2,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800007919",
+          "gamertag": "Player1",
+          "teamId": -1,
+          "standing": 3,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800047514",
+          "gamertag": "Player6",
+          "teamId": -1,
+          "standing": 4,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800031676",
+          "gamertag": "Player4",
+          "teamId": -1,
+          "standing": 5,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        },
+        {
+          "xuid": "2533274800023757",
+          "gamertag": "Player3",
+          "teamId": -1,
+          "standing": 6,
+          "score": 25,
+          "kills": 10,
+          "deaths": 10,
+          "assists": 3
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "2533274800015838": {
+      "mu": 26.649135430424796,
+      "sigma": 5.291035013200716,
+      "games": 11,
+      "wins": 5,
+      "losses": 5,
+      "draws": 1
+    },
+    "2533274800023757": {
+      "mu": 19.80314240884184,
+      "sigma": 4.196443176874379,
+      "games": 12,
+      "wins": 4,
+      "losses": 7,
+      "draws": 1
+    },
+    "2533274800055433": {
+      "mu": 33.411598798578666,
+      "sigma": 4.321340032186331,
+      "games": 12,
+      "wins": 6,
+      "losses": 5,
+      "draws": 1
+    },
+    "2533274800007919": {
+      "mu": 26.35327812147016,
+      "sigma": 3.887250244367735,
+      "games": 12,
+      "wins": 4,
+      "losses": 7,
+      "draws": 1
+    },
+    "2533274800039595": {
+      "mu": 27.70077637259448,
+      "sigma": 4.158394264593062,
+      "games": 11,
+      "wins": 3,
+      "losses": 7,
+      "draws": 1
+    },
+    "2533274800047514": {
+      "mu": 24.42013189205447,
+      "sigma": 3.8838739485199167,
+      "games": 12,
+      "wins": 5,
+      "losses": 6,
+      "draws": 1
+    },
+    "2533274800031676": {
+      "mu": 24.324797173453224,
+      "sigma": 4.130450778319155,
+      "games": 11,
+      "wins": 6,
+      "losses": 4,
+      "draws": 1
+    },
+    "2533274800000000": {
+      "mu": 25.22156579967052,
+      "sigma": 5.368584316347601,
+      "games": 11,
+      "wins": 6,
+      "losses": 4,
+      "draws": 1
+    }
+  }
+}
