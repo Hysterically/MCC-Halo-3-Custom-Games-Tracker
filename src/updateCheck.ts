@@ -1,15 +1,14 @@
 /**
  * Best-effort "your tracker is outdated" notice, printed on startup.
  *
- * The root cause behind stale #game-results posts is friends running old builds,
- * so we tell them. We compare the running build's version against the latest
- * GitHub release tag and print a prominent notice if behind. Everything here is
+ * A self-hosted tracker on an old build posts out-of-date results and misses
+ * fixes, so we compare the running build's version against the latest GitHub
+ * release tag and print a prominent notice if behind. Everything here is
  * best-effort: offline, rate-limited, or an unknown local version → say nothing
  * and never block the watcher.
  *
- * Mirror of cpp/src/update_check.cpp. The TS path runs from the git checkout, so
- * the local version comes from `git describe`; the shipped C++ exe stamps it at
- * build time (cpp/src/version.h).
+ * The tracker runs from a git checkout, so the local version comes from
+ * `git describe --tags` (or an explicit H3_VERSION override, used in tests).
  */
 
 import { execFileSync } from "node:child_process";
@@ -17,9 +16,9 @@ import { execFileSync } from "node:child_process";
 const REPO = "Hysterically/MCC-Halo-3-Custom-Games-Tracker";
 
 /**
- * Local version: an explicit H3_VERSION override (mirrors the C++ build-time
- * macro; also how this is tested) else the git tag. Undefined when neither
- * yields anything — a non-tagged dev checkout, which we don't nag about.
+ * Local version: an explicit H3_VERSION override (used in tests) else the git
+ * tag. Undefined when neither yields anything — a non-tagged dev checkout,
+ * which we don't nag about.
  */
 function localVersion(): string | undefined {
   const override = process.env.H3_VERSION?.trim();

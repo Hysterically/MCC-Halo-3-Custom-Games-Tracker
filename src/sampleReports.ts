@@ -19,8 +19,7 @@ const p = (
   standing: number,
 ): CarnagePlayer => ({
   gamertag,
-  // Unique per player (the ELO-change column is keyed by XUID); same scheme
-  // as the C++ sampleReport().
+  // Unique per player (the ELO-change column is keyed by XUID).
   xuid: `0x${gamertag}`,
   teamId,
   score,
