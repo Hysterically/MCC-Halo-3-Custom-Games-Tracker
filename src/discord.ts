@@ -66,7 +66,7 @@ import { csrFromSkill, csrText } from "./csr.ts";
 /** Podium markers for the top three places (gold, silver, bronze). */
 const MEDALS = ["🥇", "🥈", "🥉"];
 
-/** Embed accent colors, shared with the C++ build (cpp/src/format.cpp). */
+/** Embed accent colors. */
 const EMBED = {
   neutral: 0x5865f2, // blurple — leaderboards, stats, recap
   win: 0x57f287, // green — restored / counted

@@ -4,8 +4,7 @@
  * text when stdout isn't a TTY (piped, redirected to a log file, or a dumb
  * terminal), so captured output stays clean.
  *
- * Mirror of cpp/src/status_bar.{h,cpp} — keep the look and the tag colors in
- * step. The footer is the watcher's at-a-glance dashboard:
+ * The footer is the watcher's at-a-glance dashboard:
  *
  *   ⠙ watching · 3 this run · 142 total · last: Slayer on Guardian — Alpha (2m ago)
  *

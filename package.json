@@ -18,8 +18,7 @@
     "testpost": "tsx src/testPost.ts",
     "restyle": "tsx src/restyleResults.ts",
     "setup": "tsx src/setup.ts",
-    "typecheck": "tsc --noEmit",
-    "test:py": "cd python && python3 -m unittest discover -s tests"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
