@@ -27,6 +27,12 @@ owner's live install are the SAME repo — the separation exists only because
 these files stay untracked. Never `git add -f` them, and never hardcode their
 contents into `src/`.
 
+`python/` is also gitignored, for a different reason: it's a from-scratch,
+pure-stdlib Python implementation of the full TrueSkill 2 paper (a research
+companion, not the live ladder — that runs on `src/trueskill2.ts`). It's held
+local-only until its paper-accuracy audit is complete, then it will be
+published. Don't `git add` it until then.
+
 Owner-only operational notes (release publishing, Discord specifics) live in
 `CLAUDE.local.md` on the owner's machines — Claude Code auto-reads it when
 present.
@@ -56,13 +62,8 @@ comparing versions (`UPDATE_URL` in `watcher.mjs`). Bump `WATCHER_VERSION`
 in `watcher/watcher.mjs` when shipping watcher changes — without the bump,
 installed watchers ignore the new file.
 
-Legacy: `bundle.bat vX.Y.Z` still builds the old full-tracker zip
-(`dist\h3-tracker-windows.zip`; `version.txt` feeds `H3_VERSION` for
-`src/updateCheck.ts`), but releases no longer ship it.
-
 ### .bat gotchas
 
 ALL `.bat` files must be CRLF (cmd can't find `call :label` targets in LF
-files; `.gitattributes` pins it, `bundle.bat` re-normalizes staged bats) and
-must contain NO parentheses inside echo text (a `)` inside an if-block aborts
-the script).
+files; `.gitattributes` pins it) and must contain NO parentheses inside echo
+text (a `)` inside an if-block aborts the script).

@@ -206,7 +206,7 @@ export async function kvCas(db: DB, k: string, expected: string, next: string): 
 // --- hidden players ---------------------------------------------------------
 // A set of XUIDs that are kept in the data (their games still rate everyone
 // else) but suppressed from the rendered leaderboards. Stored as a JSON array
-// under the kv key `hidden_players` so every runner — TS or C++ — filters the
+// under the kv key `hidden_players` so every host filters the
 // shared board consistently. Keyed by XUID (stable across gamertag changes).
 
 const HIDDEN_KEY = "hidden_players";

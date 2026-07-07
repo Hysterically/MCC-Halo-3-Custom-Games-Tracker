@@ -3,7 +3,6 @@ node_modules/
 *.log
 data/
 /dist/
-/h3-tracker-windows.zip
 preview-*.png
 carnage.png
 /friends.env
@@ -21,3 +20,9 @@ carnage.png
 # ignores in .git/info/exclude, not here.
 CLAUDE.local.md
 /aliases.json
+
+# python/ — the TrueSkill 2 research companion. Held local-only until its
+# paper-accuracy audit is complete, then it will be published.
+/python/
+__pycache__/
+*.pyc

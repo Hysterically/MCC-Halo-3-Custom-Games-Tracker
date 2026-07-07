@@ -23,7 +23,7 @@ import { csrFromSkill, CHAMPION_THRESHOLD, type Csr } from "./csr.ts";
 // ---------------------------------------------------------------------------
 // TrueSkill parameters. The skill-class constants (mu0, sigma0, beta, draw)
 // match ../src/mmr.ts / the sandbox so all the ladders are directly comparable;
-// the rest are the TS2-specific additions. Mirrored in cpp/.
+// the rest are the TS2-specific additions.
 // ---------------------------------------------------------------------------
 const MU0 = 25; // prior mean skill
 const SIGMA0 = 25 / 3; // prior std-dev (~8.333)

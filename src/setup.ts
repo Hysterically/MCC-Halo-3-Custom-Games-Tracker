@@ -4,7 +4,7 @@
  * local `.env` next to the executable.
  *
  * Skips silently if both URLs are already configured. Run with `--force` to
- * reconfigure (start.bat exposes this as a menu option).
+ * reconfigure.
  *
  *   npm run setup
  *   tsx src/setup.ts --force
@@ -45,7 +45,7 @@ function readEnv(): EnvVars {
 function writeEnv(vars: EnvVars): void {
   const lines = [
     "# Halo 3 Customs Tracker - local config.",
-    "# Edit by running 'Setup.bat' again, or delete this file to start over.",
+    "# Edit by running 'npm run setup' again, or delete this file to start over.",
     "",
     `DISCORD_RESULTS_WEBHOOK_URL=${vars.results ?? ""}`,
     `DISCORD_LEADERBOARD_WEBHOOK_URL=${vars.leaderboard ?? ""}`,
@@ -72,7 +72,7 @@ const needsResults = !existing.results;
 const needsLeaderboard = !existing.leaderboard;
 
 if (!FORCE && !needsResults && !needsLeaderboard) {
-  console.log("Discord is already configured. (Run Setup.bat again if you want to change it.)");
+  console.log("Discord is already configured. (Run 'npm run setup' again if you want to change it.)");
   process.exit(0);
 }
 
@@ -112,13 +112,7 @@ try {
   if (!results) console.log("  (No #game-results URL set - per-match posts will be disabled.)");
   if (!leaderboard) console.log("  (No #leaderboard URL set - live leaderboard will be disabled.)");
   console.log("");
-  // Setup.bat runs us with --force and then exits; only Start.bat goes on to
-  // launch the watcher. Don't promise tracking is starting when it isn't.
-  console.log(
-    FORCE
-      ? "All set. Run Start.bat to begin tracking."
-      : "All set. The tracker will start now.",
-  );
+  console.log("All set. Run 'npm run watch' to begin tracking.");
 } finally {
   rl.close();
 }
