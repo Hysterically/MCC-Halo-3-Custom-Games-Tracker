@@ -50,6 +50,13 @@ export interface Config {
   discordGuildId?: string;
 }
 
+export interface InboxConfig {
+  /** The #carnage-inbox channel the bot reads uploads from. Unset = inbox off. */
+  channelId?: string;
+  /** How many recent channel messages the startup backlog scan walks, newest-first. */
+  backlogMessages: number;
+}
+
 // Back-compat: an older single DISCORD_WEBHOOK_URL falls through to results.
 const legacyWebhook = env("DISCORD_WEBHOOK_URL");
 
@@ -67,4 +74,9 @@ export const config: Config = {
   discordLeaderboardWebhookUrl: env("DISCORD_LEADERBOARD_WEBHOOK_URL"),
   discordBotToken: env("DISCORD_BOT_TOKEN"),
   discordGuildId: env("DISCORD_GUILD_ID"),
+};
+
+export const inboxConfig: InboxConfig = {
+  channelId: env("H3_INBOX_CHANNEL_ID"),
+  backlogMessages: Number(env("H3_INBOX_BACKLOG_MESSAGES") ?? 300),
 };

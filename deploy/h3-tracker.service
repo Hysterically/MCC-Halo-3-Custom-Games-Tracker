@@ -1,0 +1,24 @@
+; Halo 3 Customs Tracker — the 24/7 host process (npm run watch).
+; Template: __PLACEHOLDERS__ are filled in by deploy/install.sh, which copies
+; the result to /etc/systemd/system/h3-tracker.service. Don't install this
+; file verbatim.
+
+[Unit]
+Description=Halo 3 Customs Tracker
+Documentation=https://github.com/Hysterically/MCC-Halo-3-Custom-Games-Tracker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__REPO__
+; Node may live outside the system PATH (nvm installs), so the resolved
+; directory is baked in at install time.
+Environment=PATH=__NODE_DIR__:/usr/local/bin:/usr/bin:/bin
+ExecStart=__NPM__ run watch
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

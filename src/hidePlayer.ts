@@ -2,7 +2,7 @@
  * Hide (or, with --show, un-hide) a player from the leaderboards by gamertag or
  * XUID. The player's matches still count — everyone else's CSR is unchanged —
  * they're just suppressed from every rendered board. The hidden set lives in the
- * shared DB (kv `hidden_players`), so all runners (TS + C++) filter alike.
+ * shared DB (kv `hidden_players`), so every host filters alike.
  *
  *   npm run hide-player -- "<gamertag|xuid>"            # dry run (hide)
  *   npm run hide-player -- "<gamertag|xuid>" --confirm  # hide
